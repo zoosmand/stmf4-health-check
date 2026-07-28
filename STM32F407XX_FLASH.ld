@@ -70,7 +70,7 @@ FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 512K
 SECTIONS
 {
   /* The startup code goes first into FLASH */
-  .isr_vector :
+  .isr_vector (READONLY) :
   {
     . = ALIGN(4);
     KEEP(*(.isr_vector)) /* Startup code */
@@ -78,7 +78,7 @@ SECTIONS
   } >FLASH
 
   /* The program code and other data goes into FLASH */
-  .text :
+  .text (READONLY) :
   {
     . = ALIGN(4);
     *(.text)           /* .text sections (code) */
@@ -95,7 +95,7 @@ SECTIONS
   } >FLASH
 
   /* Constant data goes into FLASH */
-  .rodata :
+  .rodata (READONLY) :
   {
     . = ALIGN(4);
     *(.rodata)         /* .rodata sections (constants, strings, etc.) */
@@ -103,27 +103,27 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
 
-  .ARM.extab   : { *(.ARM.extab* .gnu.linkonce.armextab.*) } >FLASH
-  .ARM : {
+  .ARM.extab (READONLY) : { *(.ARM.extab* .gnu.linkonce.armextab.*) } >FLASH
+  .ARM (READONLY) : {
     __exidx_start = .;
     *(.ARM.exidx*)
     __exidx_end = .;
   } >FLASH
 
-  .preinit_array     :
+  .preinit_array (READONLY) :
   {
     PROVIDE_HIDDEN (__preinit_array_start = .);
     KEEP (*(.preinit_array*))
     PROVIDE_HIDDEN (__preinit_array_end = .);
   } >FLASH
-  .init_array :
+  .init_array (READONLY) :
   {
     PROVIDE_HIDDEN (__init_array_start = .);
     KEEP (*(SORT(.init_array.*)))
     KEEP (*(.init_array*))
     PROVIDE_HIDDEN (__init_array_end = .);
   } >FLASH
-  .fini_array :
+  .fini_array (READONLY) :
   {
     PROVIDE_HIDDEN (__fini_array_start = .);
     KEEP (*(SORT(.fini_array.*)))
@@ -146,15 +146,11 @@ SECTIONS
     _edata = .;        /* define a global symbol at data end */
   } >RAM AT> FLASH
 
-  _siccmram = LOADADDR(.ccmram);
-
-  /* CCM-RAM section 
-  * 
-  * IMPORTANT NOTE! 
-  * If initialized variables will be placed in this section,
-  * the startup code needs to be modified to copy the init-values.  
-  */
-  .ccmram :
+  /*
+   * Explicitly managed core-coupled RAM. Ethernet DMA cannot access CCMRAM.
+   * Objects placed here must be initialized by application code.
+   */
+  .ccmram (NOLOAD) :
   {
     . = ALIGN(4);
     _sccmram = .;       /* create a global symbol at ccmram start */
@@ -163,7 +159,7 @@ SECTIONS
     
     . = ALIGN(4);
     _eccmram = .;       /* create a global symbol at ccmram end */
-  } >CCMRAM AT> FLASH
+  } >CCMRAM
 
   
   /* Uninitialized data section */
@@ -205,5 +201,4 @@ SECTIONS
 
   .ARM.attributes 0 : { *(.ARM.attributes) }
 }
-
 

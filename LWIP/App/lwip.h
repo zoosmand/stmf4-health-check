@@ -1,76 +1,45 @@
-/* USER CODE BEGIN Header */
 /**
   ******************************************************************************
-  * File Name          : LWIP.h
-  * Description        : This file provides code for the configuration
-  *                      of the LWIP.
+  * @file           : lwip.h
+  * @brief          : Bare-metal lwIP integration interface.
+  * @project        : STM32F407 Health Check
+  * @platform       : STMicroelectronics STM32F407VET6
+  * @created        : 13.01.2026
   ******************************************************************************
   * @attention
   *
-  * Copyright (c) 2026 STMicroelectronics.
+  * Copyright (c) 2017-2026 Dmitry Slobodchikov
   * All rights reserved.
   *
   * This software is licensed under terms that can be found in the LICENSE file
   * in the root directory of this software component.
   * If no LICENSE file comes with this software, it is provided AS-IS.
   *
-  *************************************************************************
-
+  ******************************************************************************
   */
-/* USER CODE END Header */
-/* Define to prevent recursive inclusion -------------------------------------*/
-#ifndef __mx_lwip_H
-#define __mx_lwip_H
-#ifdef __cplusplus
- extern "C" {
-#endif
 
-/* Includes ------------------------------------------------------------------*/
-#include "lwip/opt.h"
-#include "lwip/mem.h"
-#include "lwip/memp.h"
-#include "netif/etharp.h"
-#include "lwip/dhcp.h"
+#ifndef LWIP_APP_H
+#define LWIP_APP_H
+
 #include "lwip/netif.h"
-#include "lwip/timeouts.h"
-#include "ethernetif.h"
 
-/* Includes for RTOS ---------------------------------------------------------*/
-#if WITH_RTOS
-#include "lwip/tcpip.h"
-#endif /* WITH_RTOS */
+typedef enum {
+  LWIP_STATUS_OK = 0,
+  LWIP_STATUS_INTERFACE_ERROR,
+  LWIP_STATUS_DHCP_ERROR,
+} Lwip_StatusTypeDef;
 
-/* USER CODE BEGIN 0 */
-
-/* USER CODE END 0 */
-
-/* Global Variables ----------------------------------------------------------*/
-extern ETH_HandleTypeDef heth;
-
-/* LWIP init function */
-void MX_LWIP_Init(void);
-
-#if !WITH_RTOS
-/* USER CODE BEGIN 1 */
-/* Function defined in lwip.c to:
- *   - Read a received packet from the Ethernet buffers
- *   - Send it to the lwIP stack for handling
- *   - Handle timeouts if NO_SYS_NO_TIMERS not set
- */
-void MX_LWIP_Process(void);
-
-/* USER CODE END 1 */
-#endif /* WITH_RTOS */
-
-#ifdef __cplusplus
-}
-#endif
-#endif /*__ mx_lwip_H */
+extern struct netif gnetif;
 
 /**
-  * @}
+  * @brief Initialize lwIP, the Ethernet interface, and DHCP.
+  * @retval (Lwip_StatusTypeDef) Initialization result.
   */
+Lwip_StatusTypeDef Lwip_Init(void);
 
 /**
-  * @}
+  * @brief Poll received frames, protocol timers, and PHY link state.
   */
+void Lwip_Process(void);
+
+#endif /* LWIP_APP_H */
