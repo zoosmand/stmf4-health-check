@@ -1,10 +1,10 @@
 /**
   ******************************************************************************
-  * @file           : main.h
-  * @brief          : Common application declarations.
+  * @file           : delay.h
+  * @brief          : Cortex cycle-counter microsecond delay interface.
   * @project        : STM32F407 Health Check
   * @platform       : STMicroelectronics STM32F407VET6
-  * @created        : 13.01.2026
+  * @created        : 28.07.2026
   ******************************************************************************
   * @attention
   *
@@ -18,14 +18,20 @@
   ******************************************************************************
   */
 
-#ifndef MAIN_H
-#define MAIN_H
+#ifndef DELAY_H
+#define DELAY_H
 
-#include "stm32f4xx_hal.h"
+#include <stdint.h>
 
-#define FLASH_CS_PIN       GPIO_PIN_3
-#define FLASH_CS_GPIO_PORT GPIOE
+/**
+  * @brief Enable the Cortex-M4 cycle counter used for short delays.
+  */
+void Delay_Init(void);
 
-void Error_Handler(void);
+/**
+  * @brief Block for the requested number of microseconds.
+  * @param microseconds (uint32_t) Delay duration in microseconds.
+  */
+void Delay_Microseconds(uint32_t microseconds);
 
-#endif /* MAIN_H */
+#endif /* DELAY_H */

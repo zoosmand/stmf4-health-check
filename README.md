@@ -5,30 +5,75 @@ STM32F407VET6. The long-term goal is to monitor an Internet resource over
 HTTPS, evaluate its HTTP response status, retain diagnostic history, and
 report failures locally.
 
-This branch establishes the Ethernet and timekeeping baseline. HTTPS,
-FreeRTOS, persistent logging, and application health policy are intentionally
-left for later issues.
+This branch establishes the Ethernet, timekeeping, and FreeRTOS platform
+baseline. HTTPS, persistent logging, and application health policy are
+intentionally left for later issues.
 
 ## Current functionality
 
 - STM32F407 running at 168 MHz from a 25 MHz HSE
 - LSE-backed hardware RTC initialization
+- IWDG initialized by the default task and refreshed once per second
 - Hardware CRC initialization
+- Onboard W25Q64JV NOR Flash interface on SPI2
+- DS18B20 support on the dedicated one-wire socket
 - Integrated STM32 Ethernet MAC in RMII mode
 - DP83848 Ethernet PHY
-- Bare-metal lwIP 2.1.2 polling
+- FreeRTOS with statically allocated application tasks
+- Raw lwIP 2.1.2 polling from a dedicated network task
 - IPv4 address acquisition through DHCP
 - DNS client support for future network services
 - Periodic PHY link monitoring
 - Zero-copy Ethernet receive buffers
 - Device-specific locally administered MAC address derived from the STM32 UID
 
-## Network architecture
+## RTOS and network architecture
 
-lwIP currently runs with `NO_SYS=1`; there is no RTOS or lwIP TCP/IP thread.
-The main loop must call `Lwip_Process()` continuously. That function drains
-received Ethernet frames, advances lwIP protocol timers, and checks PHY link
-state every 100 ms.
+FreeRTOS uses a 1 kHz tick and static allocation only. The default task is a
+placeholder for future application coordination. A higher-priority network
+task calls `Lwip_Process()` every millisecond.
+
+lwIP remains configured with `NO_SYS=1`; there is no lwIP TCP/IP thread.
+Keeping every raw lwIP call in the network task preserves the required
+single-context execution model. `Lwip_Process()` drains received Ethernet
+frames, advances protocol timers, and checks PHY link state every 100 ms.
+
+SysTick remains the STM32 HAL timebase. The interrupt handler increments the
+HAL tick and dispatches the FreeRTOS tick after the scheduler has started.
+FreeRTOS supplies the SVC and PendSV exception handlers through its Cortex-M4F
+port.
+
+The confirmed 2.5-second PHY stabilization delay and lwIP initialization run
+before the scheduler starts. DHCP negotiation then advances from the network
+task.
+
+The independent watchdog starts from the default task after the scheduler is
+operational. With the LSI clock, prescaler 256, and reload value 4095, its
+nominal timeout is approximately 32 seconds. Starting it after Ethernet
+initialization prevents the board-required PHY delay from consuming the
+watchdog window.
+
+## Onboard NOR Flash
+
+The JZ-F407VET6 carries an 8 MB Winbond W25Q64JV connected to SPI2:
+
+- `PB10` — SPI2 SCK
+- `PC2` — SPI2 MISO
+- `PC3` — SPI2 MOSI
+- `PE3` — software-controlled Flash chip select
+
+SPI2 is initialized in mode 0 with an APB1-derived 10.5 MHz clock. Chip select
+is driven high before SPI initialization so the Flash remains deselected
+during startup. The storage driver and read/write policy will be added
+separately.
+
+## Temperature sensor
+
+The dedicated `P7:18B20` connector routes its one-wire data signal to `PE2`.
+The driver discovers up to six DS18B20 devices, validates ROM and scratchpad
+CRC values, and supports both externally powered and parasitic-powered
+sensors. A FreeRTOS service refreshes measurements every seven seconds and
+rescans the bus once per minute.
 
 The Ethernet driver uses blocking transmission with a bounded 20 ms timeout.
 Transmit failures are returned to lwIP. Receive buffers and DMA descriptors
@@ -54,6 +99,8 @@ DMA targets in that section.
 ## Project structure
 
 - `Core/` — application startup, HAL configuration, and exception handlers
+- `Srv/` — FreeRTOS application and network services
+- `FreeRTOS-Kernel/` — imported FreeRTOS kernel and Cortex-M4F port
 - `LWIP/App/` — application-level lwIP initialization and polling
 - `LWIP/Target/` — STM32 Ethernet MAC and DP83848 adaptation
 - `Drivers/` — ST HAL, CMSIS, and PHY vendor sources

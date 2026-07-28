@@ -2,8 +2,8 @@
   ******************************************************************************
   * @file           : FreeRTOSConfig.h
   * @brief          : FreeRTOS kernel configuration for the application.
-  * @project        : STM32F401 Test Platform
-  * @platform       : STMicroelectronics STM32F401RCT6
+  * @project        : STM32F407 Health Check
+  * @platform       : STMicroelectronics STM32F407VET6
   * @created        : 28.07.2026
   ******************************************************************************
   * @attention
@@ -53,7 +53,7 @@
 #define configUSE_CO_ROUTINES                      0
 
 #define configUSE_IDLE_HOOK                        0
-#define configUSE_TICK_HOOK                        1
+#define configUSE_TICK_HOOK                        0
 #define configUSE_MALLOC_FAILED_HOOK               0
 #define configCHECK_FOR_STACK_OVERFLOW             2
 

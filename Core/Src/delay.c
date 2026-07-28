@@ -1,10 +1,10 @@
 /**
   ******************************************************************************
-  * @file           : main.h
-  * @brief          : Common application declarations.
+  * @file           : delay.c
+  * @brief          : Cortex cycle-counter microsecond delays.
   * @project        : STM32F407 Health Check
   * @platform       : STMicroelectronics STM32F407VET6
-  * @created        : 13.01.2026
+  * @created        : 28.07.2026
   ******************************************************************************
   * @attention
   *
@@ -18,14 +18,18 @@
   ******************************************************************************
   */
 
-#ifndef MAIN_H
-#define MAIN_H
+#include "delay.h"
+#include "stm32f4xx.h"
 
-#include "stm32f4xx_hal.h"
+void Delay_Init(void) {
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+  DWT->CYCCNT = 0U;
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+}
 
-#define FLASH_CS_PIN       GPIO_PIN_3
-#define FLASH_CS_GPIO_PORT GPIOE
-
-void Error_Handler(void);
-
-#endif /* MAIN_H */
+void Delay_Microseconds(uint32_t microseconds) {
+  uint32_t cycles = microseconds * (SystemCoreClock / 1000000U);
+  uint32_t start = DWT->CYCCNT;
+  while ((DWT->CYCCNT - start) < cycles) {
+  }
+}

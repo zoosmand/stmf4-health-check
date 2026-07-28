@@ -21,6 +21,11 @@
 #include "main.h"
 #include "stm32f4xx_it.h"
 
+#include "FreeRTOS.h"
+#include "task.h"
+
+extern void xPortSysTickHandler(void);
+
 static void exception_Stop(void) {
   for (;;) {
   }
@@ -46,15 +51,12 @@ void UsageFault_Handler(void) {
   exception_Stop();
 }
 
-void SVC_Handler(void) {
-}
-
 void DebugMon_Handler(void) {
-}
-
-void PendSV_Handler(void) {
 }
 
 void SysTick_Handler(void) {
   HAL_IncTick();
+
+  if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED)
+    xPortSysTickHandler();
 }

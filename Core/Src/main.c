@@ -20,17 +20,22 @@
 
 #include "main.h"
 
+#include "FreeRTOS.h"
 #include "lwip.h"
+#include "rtos.h"
+#include "task.h"
 
 #define ETHERNET_PHY_STARTUP_DELAY_MS 2500U
 
 CRC_HandleTypeDef hcrc;
 RTC_HandleTypeDef hrtc;
+SPI_HandleTypeDef hspi2;
 
 static void system_ClockConfigure(void);
 static void peripheral_GpioInit(void);
 static void peripheral_CrcInit(void);
 static void peripheral_RtcInit(void);
+static void peripheral_Spi2Init(void);
 
 int main(void) {
   HAL_Init();
@@ -39,6 +44,7 @@ int main(void) {
   peripheral_GpioInit();
   peripheral_CrcInit();
   peripheral_RtcInit();
+  peripheral_Spi2Init();
 
   /*
    * This board's Ethernet PHY is not ready immediately after power-up.
@@ -49,8 +55,11 @@ int main(void) {
   if (Lwip_Init() != LWIP_STATUS_OK)
     Error_Handler();
 
-  for (;;)
-    Lwip_Process();
+  if (Rtos_Init() != RTOS_STATUS_OK)
+    Error_Handler();
+
+  vTaskStartScheduler();
+  Error_Handler();
 }
 
 static void system_ClockConfigure(void) {
@@ -89,7 +98,18 @@ static void peripheral_GpioInit(void) {
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
+
+  HAL_GPIO_WritePin(FLASH_CS_GPIO_PORT, FLASH_CS_PIN, GPIO_PIN_SET);
+
+  GPIO_InitTypeDef flashChipSelect = {
+    .Pin = FLASH_CS_PIN,
+    .Mode = GPIO_MODE_OUTPUT_PP,
+    .Pull = GPIO_PULLUP,
+    .Speed = GPIO_SPEED_FREQ_VERY_HIGH,
+  };
+  HAL_GPIO_Init(FLASH_CS_GPIO_PORT, &flashChipSelect);
 }
 
 static void peripheral_CrcInit(void) {
@@ -107,6 +127,23 @@ static void peripheral_RtcInit(void) {
   hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
   hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
   if (HAL_RTC_Init(&hrtc) != HAL_OK)
+    Error_Handler();
+}
+
+static void peripheral_Spi2Init(void) {
+  hspi2.Instance = SPI2;
+  hspi2.Init.Mode = SPI_MODE_MASTER;
+  hspi2.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi2.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi2.Init.NSS = SPI_NSS_SOFT;
+  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
+  hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi2.Init.CRCPolynomial = 7U;
+  if (HAL_SPI_Init(&hspi2) != HAL_OK)
     Error_Handler();
 }
 

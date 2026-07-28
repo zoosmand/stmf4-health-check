@@ -37,10 +37,19 @@ BUILD_DIR = build
 # C sources
 C_SOURCES =  \
 Core/Src/main.c \
+Core/Src/delay.c \
 Core/Src/stm32f4xx_it.c \
 Core/Src/stm32f4xx_hal_msp.c \
+Srv/Src/rtos.c \
+Srv/Src/temperature_service.c \
+Periph/Src/onewire.c \
+Periph/Src/ds18b20.c \
 LWIP/App/lwip.c \
 LWIP/Target/ethernetif.c \
+FreeRTOS-Kernel/list.c \
+FreeRTOS-Kernel/queue.c \
+FreeRTOS-Kernel/tasks.c \
+FreeRTOS-Kernel/portable/GCC/ARM_CM4F/port.c \
 Drivers/BSP/Components/dp83848/dp83848.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc_ex.c \
@@ -53,6 +62,8 @@ Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_cortex.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_exti.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_eth.c \
+Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_iwdg.c \
+Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_spi.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_crc.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rtc.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rtc_ex.c \
@@ -148,6 +159,10 @@ C_INCLUDES =  \
 -ILWIP/App \
 -ILWIP/Target \
 -ICore/Inc \
+-IPeriph/Inc \
+-ISrv/Inc \
+-IFreeRTOS-Kernel/include \
+-IFreeRTOS-Kernel/portable/GCC/ARM_CM4F \
 -IMiddlewares/Third_Party/LwIP/src/include \
 -IMiddlewares/Third_Party/LwIP/system \
 -IDrivers/STM32F4xx_HAL_Driver/Inc \
