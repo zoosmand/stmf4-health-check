@@ -49,7 +49,11 @@ uint8_t OneWire_ReadBit(void);
 uint8_t OneWire_ReadByte(void);
 /** @brief Update a Dallas/Maxim CRC-8 with one byte. */
 uint8_t OneWire_CRC8(uint8_t crc, uint8_t value);
-/** @brief Discover and cache up to six valid devices. */
+/**
+  * @brief Discover and cache up to six valid devices.
+  * @retval (ErrorStatus) SUCCESS when at least one valid device is found.
+  * @note Acquires and releases the one-wire bus mutex internally.
+  */
 ErrorStatus OneWire_Search(void);
 /** @brief Select a device by its eight-byte ROM code. */
 ErrorStatus OneWire_MatchRom(const uint8_t* rom);

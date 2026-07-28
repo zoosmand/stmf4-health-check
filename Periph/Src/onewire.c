@@ -34,11 +34,11 @@ static StaticSemaphore_t oneWireMutexBuffer;
 static SemaphoreHandle_t oneWireMutex;
 
 static void oneWire_WriteBit(uint8_t value);
+static ErrorStatus oneWire_SearchUnlocked(void);
 static uint32_t oneWire_InterruptLock(void);
 static void oneWire_InterruptUnlock(uint32_t interruptMask);
 
 ErrorStatus OneWire_Init(void) {
-  __HAL_RCC_GPIOE_CLK_ENABLE();
   HAL_GPIO_WritePin(ONEWIRE_PORT, ONEWIRE_PIN, GPIO_PIN_SET);
   GPIO_InitTypeDef gpio = {
     .Pin = ONEWIRE_PIN,
@@ -103,6 +103,15 @@ uint8_t OneWire_CRC8(uint8_t crc, uint8_t value) {
 }
 
 ErrorStatus OneWire_Search(void) {
+  if (OneWire_Lock(portMAX_DELAY) != pdTRUE)
+    return ERROR;
+
+  ErrorStatus status = oneWire_SearchUnlocked();
+  OneWire_Unlock();
+  return status;
+}
+
+static ErrorStatus oneWire_SearchUnlocked(void) {
   uint8_t rom[8] = {0};
   uint8_t lastDiscrepancy = 0U;
   uint8_t lastDevice = 0U;

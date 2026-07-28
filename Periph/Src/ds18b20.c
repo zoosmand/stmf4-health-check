@@ -26,10 +26,10 @@
 #define DS18B20_COMMAND_READ_SCRATCHPAD 0xBEU
 #define DS18B20_CONVERSION_TIMEOUT_MS   750U
 
-static DS18B20_StatusTypeDef dS18B20_MeasureDevice(
+static DS18B20_StatusTypeDef ds18b20_MeasureDevice(
   OneWireDevice_TypeDef* device
 );
-static ErrorStatus dS18B20_WaitForConversion(uint32_t timeoutMs);
+static ErrorStatus ds18b20_WaitForConversion(uint32_t timeoutMs);
 
 ErrorStatus DS18B20_Measure(
   DS18B20_MeasurementTypeDef* measurements,
@@ -49,7 +49,7 @@ ErrorStatus DS18B20_Measure(
 
   for (uint8_t index = 0U; index < readCount; index++) {
     memcpy(measurements[index].rom, devices[index].rom, 8U);
-    measurements[index].status = dS18B20_MeasureDevice(&devices[index]);
+    measurements[index].status = ds18b20_MeasureDevice(&devices[index]);
     if (measurements[index].status == DS18B20_STATUS_OK) {
       int16_t raw = (int16_t)(
         ((uint16_t)devices[index].scratchpad[1] << 8U)
@@ -67,7 +67,7 @@ ErrorStatus DS18B20_Measure(
   return (readCount > 0U) ? SUCCESS : ERROR;
 }
 
-static DS18B20_StatusTypeDef dS18B20_MeasureDevice(
+static DS18B20_StatusTypeDef ds18b20_MeasureDevice(
   OneWireDevice_TypeDef* device
 ) {
   uint8_t isParasitic;
@@ -81,7 +81,7 @@ static DS18B20_StatusTypeDef dS18B20_MeasureDevice(
     OneWire_StrongPullupEnable();
     vTaskDelay(pdMS_TO_TICKS(DS18B20_CONVERSION_TIMEOUT_MS));
     OneWire_StrongPullupDisable();
-  } else if (dS18B20_WaitForConversion(
+  } else if (ds18b20_WaitForConversion(
                DS18B20_CONVERSION_TIMEOUT_MS
              ) != SUCCESS) {
     return DS18B20_STATUS_TIMEOUT;
@@ -99,7 +99,7 @@ static DS18B20_StatusTypeDef dS18B20_MeasureDevice(
   return (crc == 0U) ? DS18B20_STATUS_OK : DS18B20_STATUS_CRC;
 }
 
-static ErrorStatus dS18B20_WaitForConversion(uint32_t timeoutMs) {
+static ErrorStatus ds18b20_WaitForConversion(uint32_t timeoutMs) {
   TickType_t start = xTaskGetTickCount();
   TickType_t timeout = pdMS_TO_TICKS(timeoutMs);
   do {

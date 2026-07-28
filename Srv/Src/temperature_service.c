@@ -61,10 +61,7 @@ static void temperatureService_Task(void* argument) {
     if ((OneWire_GetDeviceCount() == 0U)
         || ((now - lastSearchTick)
             >= pdMS_TO_TICKS(ONEWIRE_SEARCH_PERIOD_MS))) {
-      if (OneWire_Lock(portMAX_DELAY) == pdTRUE) {
-        (void)OneWire_Search();
-        OneWire_Unlock();
-      }
+      (void)OneWire_Search();
       lastSearchTick = now;
     }
 
