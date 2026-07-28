@@ -64,6 +64,7 @@ build*/
 # Vendir Sources
 Drivers/
 Middlewares/
+FreeRTOS-Kernel/
 
 # macOS trash
 Core/.DS_Store
