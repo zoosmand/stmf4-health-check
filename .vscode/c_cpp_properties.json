@@ -1,0 +1,129 @@
+{
+   "configurations": [
+      {
+         "name": "MacOS",
+         "includePath": [
+            "${env:VSARM}/arm-gcc/arm-none-eabi/include/c++/14.2.1",
+            "${env:VSARM}/arm-gcc/arm-none-eabi/include/c++/14.2.1/arm-none-eabi",
+            "${env:VSARM}/arm-gcc/arm-none-eabi/include/c++/14.2.1/backward",
+            "${env:VSARM}/arm-gcc/lib/gcc/arm-none-eabi/14.2.1/include",
+            "${env:VSARM}/arm-gcc/lib/gcc/arm-none-eabi/14.2.1/include-fixed",
+            "${env:VSARM}/arm-gcc/arm-none-eabi/include",
+            "${workspaceRoot}/Drivers/CMSIS/Include",
+            "${workspaceRoot}/Core/Inc",
+            "${workspaceRoot}/LWIP/App",
+            "${workspaceRoot}/LWIP/Target",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/system",
+            "${workspaceRoot}/Drivers/STM32F4xx_HAL_Driver/Inc",
+            "${workspaceRoot}/Drivers/STM32F4xx_HAL_Driver/Inc/Legacy",
+            "${workspaceRoot}/Drivers/BSP/Components/dp83848",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/netif/ppp",
+            "${workspaceRoot}/Drivers/CMSIS/Device/ST/STM32F4xx/Include",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/lwip",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/lwip/apps",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/lwip/priv",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/lwip/prot",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/netif",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/compat/posix",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/compat/posix/arpa",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/compat/posix/net",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/compat/posix/sys",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/compat/stdc",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/system/arch",
+            "${workspaceRoot}/Drivers/CMSIS/Include"
+         ],
+         "defines": [
+            "DEBUG",
+            "DEFAULT_STACK_SIZE=2048",
+            "USE_DEVICE_MODE",
+            "USE_FULL_ASSERT",
+            "HSE_VALUE=8000000",
+            "HSE_STARTUP_TIMEOUT=100",
+            "LSE_STARTUP_TIMEOUT=5000",
+            "LSE_VALUE=32768",
+            "HSI_VALUE=16000000",
+            "LSI_VALUE=40000",
+            "VDD_VALUE=3300",
+            "PREFETCH_ENABLE=1",
+            "STM32F407xx",
+            "ENABLE_ETHERNET"
+         ],
+         "intelliSenseMode": "macos-clang-arm64",
+         "cStandard": "c23",
+         "cppStandard": "c++23",
+         "browse": {
+            "path": [
+               "${workspaceRoot}",
+               "${env:VSARM}/arm-gcc",
+               "${env:VSARM}/cache"
+            ],
+            "limitSymbolsToIncludedHeaders": false,
+            "databaseFilename": ""
+         }
+      },
+      {
+         "name": "Linux",
+         "includePath": [
+            "${env:VSARM}/arm-gcc/arm-none-eabi/include/c++/14.2.1",
+            "${env:VSARM}/arm-gcc/arm-none-eabi/include/c++/14.2.1/arm-none-eabi",
+            "${env:VSARM}/arm-gcc/arm-none-eabi/include/c++/14.2.1/backward",
+            "${env:VSARM}/arm-gcc/lib/gcc/arm-none-eabi/14.2.1/include",
+            "${env:VSARM}/arm-gcc/lib/gcc/arm-none-eabi/14.2.1/include-fixed",
+            "${env:VSARM}/arm-gcc/arm-none-eabi/include",
+            "${workspaceRoot}/Drivers/CMSIS/Include",
+            "${workspaceRoot}/Core/Inc",
+            "${workspaceRoot}/LWIP/App",
+            "${workspaceRoot}/LWIP/Target",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/system",
+            "${workspaceRoot}/Drivers/STM32F4xx_HAL_Driver/Inc",
+            "${workspaceRoot}/Drivers/STM32F4xx_HAL_Driver/Inc/Legacy",
+            "${workspaceRoot}/Drivers/BSP/Components/dp83848",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/netif/ppp",
+            "${workspaceRoot}/Drivers/CMSIS/Device/ST/STM32F4xx/Include",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/lwip",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/lwip/apps",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/lwip/priv",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/lwip/prot",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/netif",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/compat/posix",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/compat/posix/arpa",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/compat/posix/net",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/compat/posix/sys",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/compat/stdc",
+            "${workspaceRoot}/Middlewares/Third_Party/LwIP/system/arch",
+            "${workspaceRoot}/Drivers/CMSIS/Include"
+         ],
+         "defines": [
+            "DEBUG",
+            "DEFAULT_STACK_SIZE=2048",
+            "USE_DEVICE_MODE",
+            "USE_FULL_ASSERT",
+            "HSE_VALUE=8000000",
+            "HSE_STARTUP_TIMEOUT=100",
+            "LSE_STARTUP_TIMEOUT=5000",
+            "LSE_VALUE=32768",
+            "HSI_VALUE=16000000",
+            "LSI_VALUE=40000",
+            "VDD_VALUE=3300",
+            "PREFETCH_ENABLE=1",
+            "STM32F103xB",
+            "SWO_USART=USART1"
+         ],
+         "intelliSenseMode": "linux-gcc-x64",
+         "cStandard": "c23",
+         "cppStandard": "c++23",
+         "browse": {
+            "path": [
+               "${workspaceRoot}",
+               "${env:VSARM}/arm-gcc",
+               "${env:VSARM}/cache"
+            ],
+            "limitSymbolsToIncludedHeaders": false,
+            "databaseFilename": ""
+         }
+      }
+   ],
+   "version": 4
+}
