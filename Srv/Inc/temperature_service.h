@@ -1,10 +1,10 @@
 /**
   ******************************************************************************
-  * @file           : main.h
-  * @brief          : Common application declarations.
+  * @file           : temperature_service.h
+  * @brief          : Periodic DS18B20 measurement service.
   * @project        : STM32F407 Health Check
   * @platform       : STMicroelectronics STM32F407VET6
-  * @created        : 13.01.2026
+  * @created        : 28.07.2026
   ******************************************************************************
   * @attention
   *
@@ -18,14 +18,15 @@
   ******************************************************************************
   */
 
-#ifndef MAIN_H
-#define MAIN_H
+#ifndef TEMPERATURE_SERVICE_H
+#define TEMPERATURE_SERVICE_H
 
-#include "stm32f4xx_hal.h"
+#include "main.h"
 
-#define FLASH_CS_PIN       GPIO_PIN_3
-#define FLASH_CS_GPIO_PORT GPIOE
+/**
+  * @brief Initialize the one-wire bus and create its measurement task.
+  * @retval (ErrorStatus) SUCCESS when the service task is created.
+  */
+ErrorStatus TemperatureService_Init(void);
 
-void Error_Handler(void);
-
-#endif /* MAIN_H */
+#endif /* TEMPERATURE_SERVICE_H */

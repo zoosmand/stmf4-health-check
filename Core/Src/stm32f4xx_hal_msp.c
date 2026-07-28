@@ -52,3 +52,34 @@ void HAL_RTC_MspDeInit(RTC_HandleTypeDef* rtc) {
   if ((rtc != NULL) && (rtc->Instance == RTC))
     __HAL_RCC_RTC_DISABLE();
 }
+
+void HAL_SPI_MspInit(SPI_HandleTypeDef* spi) {
+  if ((spi == NULL) || (spi->Instance != SPI2))
+    return;
+
+  __HAL_RCC_SPI2_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
+
+  GPIO_InitTypeDef gpio = {
+    .Mode = GPIO_MODE_AF_PP,
+    .Pull = GPIO_NOPULL,
+    .Speed = GPIO_SPEED_FREQ_VERY_HIGH,
+    .Alternate = GPIO_AF5_SPI2,
+  };
+
+  gpio.Pin = GPIO_PIN_10;
+  HAL_GPIO_Init(GPIOB, &gpio);
+
+  gpio.Pin = GPIO_PIN_2 | GPIO_PIN_3;
+  HAL_GPIO_Init(GPIOC, &gpio);
+}
+
+void HAL_SPI_MspDeInit(SPI_HandleTypeDef* spi) {
+  if ((spi == NULL) || (spi->Instance != SPI2))
+    return;
+
+  __HAL_RCC_SPI2_CLK_DISABLE();
+  HAL_GPIO_DeInit(GPIOB, GPIO_PIN_10);
+  HAL_GPIO_DeInit(GPIOC, GPIO_PIN_2 | GPIO_PIN_3);
+}
