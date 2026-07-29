@@ -22,8 +22,11 @@
 
 #include "FreeRTOS.h"
 #include "lwip.h"
+#include "rs485.h"
 #include "rtos.h"
 #include "task.h"
+
+#include <stdio.h>
 
 #define ETHERNET_PHY_STARTUP_DELAY_MS 2500U
 
@@ -45,6 +48,9 @@ int main(void) {
   peripheral_CrcInit();
   peripheral_RtcInit();
   peripheral_Spi2Init();
+  if (Rs485_Init() != HAL_OK)
+    Error_Handler();
+  printf("RS485 standard output ready.\r\n");
 
   /*
    * This board's Ethernet PHY is not ready immediately after power-up.

@@ -24,6 +24,8 @@
 #include "onewire.h"
 #include "task.h"
 
+#include <stdio.h>
+
 #define TEMPERATURE_TASK_STACK_DEPTH 256U
 #define TEMPERATURE_PERIOD_MS        7000U
 #define ONEWIRE_SEARCH_PERIOD_MS     60000U
@@ -34,6 +36,7 @@ static DS18B20_MeasurementTypeDef measurements[ONEWIRE_MAX_DEVICES];
 static uint8_t measurementCount;
 
 static void temperatureService_Task(void* argument);
+static void temperatureService_PrintMeasurements(void);
 
 ErrorStatus TemperatureService_Init(void) {
   if (OneWire_Init() != SUCCESS)
@@ -65,14 +68,45 @@ static void temperatureService_Task(void* argument) {
       lastSearchTick = now;
     }
 
-    (void)DS18B20_Measure(
+    ErrorStatus conversionStatus = DS18B20_Measure(
       measurements,
       ONEWIRE_MAX_DEVICES,
       &measurementCount
     );
+    if (conversionStatus == SUCCESS)
+      temperatureService_PrintMeasurements();
+    else
+      printf("DS18B20: no sensors available\r\n");
+
     vTaskDelayUntil(
       &lastWakeTick,
       pdMS_TO_TICKS(TEMPERATURE_PERIOD_MS)
     );
+  }
+}
+
+/**
+  * @brief Print the most recent DS18B20 conversion results line by line.
+  */
+static void temperatureService_PrintMeasurements(void) {
+  for (uint8_t index = 0U; index < measurementCount; index++) {
+    const DS18B20_MeasurementTypeDef* measurement = &measurements[index];
+    if (measurement->status == DS18B20_STATUS_OK) {
+      int32_t temperature = measurement->temperatureCentiDegrees;
+      int32_t magnitude = (temperature < 0) ? -temperature : temperature;
+      printf(
+        "DS18B20 #%u: %s%ld.%02ld C\r\n",
+        (unsigned int)(index + 1U),
+        (temperature < 0) ? "-" : "",
+        (long)(magnitude / 100),
+        (long)(magnitude % 100)
+      );
+    } else {
+      printf(
+        "DS18B20 #%u: conversion error %u\r\n",
+        (unsigned int)(index + 1U),
+        (unsigned int)measurement->status
+      );
+    }
   }
 }

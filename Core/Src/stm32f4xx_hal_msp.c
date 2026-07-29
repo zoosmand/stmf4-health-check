@@ -83,3 +83,38 @@ void HAL_SPI_MspDeInit(SPI_HandleTypeDef* spi) {
   HAL_GPIO_DeInit(GPIOB, GPIO_PIN_10);
   HAL_GPIO_DeInit(GPIOC, GPIO_PIN_2 | GPIO_PIN_3);
 }
+
+void HAL_UART_MspInit(UART_HandleTypeDef* uart) {
+  if ((uart == NULL) || (uart->Instance != USART2))
+    return;
+
+  __HAL_RCC_USART2_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
+
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_7, GPIO_PIN_RESET);
+
+  GPIO_InitTypeDef direction = {
+    .Pin = GPIO_PIN_7,
+    .Mode = GPIO_MODE_OUTPUT_PP,
+    .Pull = GPIO_NOPULL,
+    .Speed = GPIO_SPEED_FREQ_VERY_HIGH,
+  };
+  HAL_GPIO_Init(GPIOD, &direction);
+
+  GPIO_InitTypeDef uartPins = {
+    .Pin = GPIO_PIN_5 | GPIO_PIN_6,
+    .Mode = GPIO_MODE_AF_PP,
+    .Pull = GPIO_PULLUP,
+    .Speed = GPIO_SPEED_FREQ_VERY_HIGH,
+    .Alternate = GPIO_AF7_USART2,
+  };
+  HAL_GPIO_Init(GPIOD, &uartPins);
+}
+
+void HAL_UART_MspDeInit(UART_HandleTypeDef* uart) {
+  if ((uart == NULL) || (uart->Instance != USART2))
+    return;
+
+  __HAL_RCC_USART2_CLK_DISABLE();
+  HAL_GPIO_DeInit(GPIOD, GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7);
+}
