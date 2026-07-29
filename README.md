@@ -12,7 +12,7 @@ intentionally left for later issues.
 ## Current functionality
 
 - STM32F407 running at 168 MHz from a 25 MHz HSE
-- LSE-backed hardware RTC initialization
+- LSE-backed hardware RTC synchronized in UTC with `pool.ntp.org`
 - IWDG initialized by the default task and refreshed once per second
 - Hardware CRC initialization
 - Onboard W25Q64JV NOR Flash interface on SPI2
@@ -20,7 +20,7 @@ intentionally left for later issues.
 - Integrated STM32 Ethernet MAC in RMII mode
 - DP83848 Ethernet PHY
 - FreeRTOS with statically allocated application tasks
-- Raw lwIP 2.1.2 polling from a dedicated network task
+- FreeRTOS-aware lwIP 2.1.2 with a dedicated TCP/IP core thread
 - IPv4 address acquisition through DHCP
 - DNS client support for future network services
 - Periodic PHY link monitoring
@@ -34,19 +34,23 @@ FreeRTOS uses a 1 kHz tick and static allocation only. The default task is a
 placeholder for future application coordination. A higher-priority network
 task calls `Lwip_Process()` every millisecond.
 
-lwIP remains configured with `NO_SYS=1`; there is no lwIP TCP/IP thread.
-Keeping every raw lwIP call in the network task preserves the required
-single-context execution model. `Lwip_Process()` drains received Ethernet
-frames, advances protocol timers, and checks PHY link state every 100 ms.
+lwIP is configured with `NO_SYS=0` and a statically allocated native FreeRTOS
+system port. The network task drains Ethernet frames and checks PHY state,
+while protocol processing and raw API callbacks run in lwIP's dedicated
+TCP/IP core thread.
 
 SysTick remains the STM32 HAL timebase. The interrupt handler increments the
 HAL tick and dispatches the FreeRTOS tick after the scheduler has started.
 FreeRTOS supplies the SVC and PendSV exception handlers through its Cortex-M4F
 port.
 
-The confirmed 2.5-second PHY stabilization delay and lwIP initialization run
-before the scheduler starts. DHCP negotiation then advances from the network
-task.
+The confirmed 2.5-second PHY stabilization delay runs before the scheduler
+starts. The network task then initializes lwIP and handles DHCP negotiation.
+
+The time service resolves `pool.ntp.org`, sends a compact UDP NTP request, and
+sets the LSE-backed RTC from the returned UTC timestamp. It retries failures
+after 60 seconds, refreshes synchronization hourly, and prints synchronization
+status plus the current UTC time through RS485 `printf()`.
 
 The independent watchdog starts from the default task after the scheduler is
 operational. With the LSI clock, prescaler 256, and reload value 4095, its

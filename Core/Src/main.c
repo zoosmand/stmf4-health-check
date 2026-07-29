@@ -22,6 +22,7 @@
 
 #include "FreeRTOS.h"
 #include "lwip.h"
+#include "rtc.h"
 #include "rs485.h"
 #include "rtos.h"
 #include "task.h"
@@ -31,13 +32,11 @@
 #define ETHERNET_PHY_STARTUP_DELAY_MS 2500U
 
 CRC_HandleTypeDef hcrc;
-RTC_HandleTypeDef hrtc;
 SPI_HandleTypeDef hspi2;
 
 static void system_ClockConfigure(void);
 static void peripheral_GpioInit(void);
 static void peripheral_CrcInit(void);
-static void peripheral_RtcInit(void);
 static void peripheral_Spi2Init(void);
 
 int main(void) {
@@ -46,7 +45,8 @@ int main(void) {
 
   peripheral_GpioInit();
   peripheral_CrcInit();
-  peripheral_RtcInit();
+  if (Rtc_Init() != HAL_OK)
+    Error_Handler();
   peripheral_Spi2Init();
   if (Rs485_Init() != HAL_OK)
     Error_Handler();
@@ -57,9 +57,6 @@ int main(void) {
    * Allow it to stabilize before the MAC and LwIP initialize the interface.
    */
   HAL_Delay(ETHERNET_PHY_STARTUP_DELAY_MS);
-
-  if (Lwip_Init() != LWIP_STATUS_OK)
-    Error_Handler();
 
   if (Rtos_Init() != RTOS_STATUS_OK)
     Error_Handler();
@@ -121,18 +118,6 @@ static void peripheral_GpioInit(void) {
 static void peripheral_CrcInit(void) {
   hcrc.Instance = CRC;
   if (HAL_CRC_Init(&hcrc) != HAL_OK)
-    Error_Handler();
-}
-
-static void peripheral_RtcInit(void) {
-  hrtc.Instance = RTC;
-  hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
-  hrtc.Init.AsynchPrediv = 127U;
-  hrtc.Init.SynchPrediv = 255U;
-  hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
-  hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
-  hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
-  if (HAL_RTC_Init(&hrtc) != HAL_OK)
     Error_Handler();
 }
 

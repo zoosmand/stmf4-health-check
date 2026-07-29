@@ -25,6 +25,7 @@
 #include "main.h"
 #include "task.h"
 #include "temperature_service.h"
+#include "time_service.h"
 
 #define DEFAULT_TASK_STACK_DEPTH 128U
 #define NETWORK_TASK_STACK_DEPTH 256U
@@ -51,6 +52,8 @@ static void rtos_NetworkTask(void* argument);
 
 Rtos_StatusTypeDef Rtos_Init(void) {
   if (TemperatureService_Init() != SUCCESS)
+    return RTOS_STATUS_TASK_ERROR;
+  if (TimeService_Init() != SUCCESS)
     return RTOS_STATUS_TASK_ERROR;
 
   TaskHandle_t taskHandle = xTaskCreateStatic(
@@ -98,6 +101,9 @@ static void rtos_DefaultTask(void* argument) {
 
 static void rtos_NetworkTask(void* argument) {
   (void)argument;
+
+  if (Lwip_Init() != LWIP_STATUS_OK)
+    Error_Handler();
 
   for (;;) {
     Lwip_Process();

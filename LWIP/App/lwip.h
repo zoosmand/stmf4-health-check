@@ -42,4 +42,10 @@ Lwip_StatusTypeDef Lwip_Init(void);
   */
 void Lwip_Process(void);
 
+/**
+  * @brief Check whether a configured Ethernet link is available.
+  * @retval (uint8_t) Nonzero when link and IPv4 configuration are ready.
+  */
+uint8_t Lwip_IsReady(void);
+
 #endif /* LWIP_APP_H */
