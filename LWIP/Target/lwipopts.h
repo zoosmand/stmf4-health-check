@@ -1,7 +1,7 @@
 /**
   ******************************************************************************
   * @file           : lwipopts.h
-  * @brief          : lwIP configuration for bare-metal Ethernet operation.
+  * @brief          : lwIP configuration for FreeRTOS Ethernet operation.
   * @project        : STM32F407 Health Check
   * @platform       : STMicroelectronics STM32F407VET6
   * @created        : 13.01.2026
@@ -23,9 +23,14 @@
 
 #include "main.h"
 
-#define WITH_RTOS                    0
-#define NO_SYS                       1
-#define SYS_LIGHTWEIGHT_PROT         0
+#define WITH_RTOS                    1
+#define NO_SYS                       0
+#define SYS_LIGHTWEIGHT_PROT         1
+#define LWIP_TCPIP_CORE_LOCKING      1
+#define TCPIP_THREAD_NAME            "tcpip"
+#define TCPIP_THREAD_STACKSIZE       1024U
+#define TCPIP_THREAD_PRIO            3U
+#define TCPIP_MBOX_SIZE              8U
 
 #define LWIP_IPV4                    1
 #define LWIP_IPV6                    0

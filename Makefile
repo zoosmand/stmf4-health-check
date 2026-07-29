@@ -13,7 +13,7 @@
 ######################################
 # target
 ######################################
-TARGET = F407_eth_test_04
+TARGET = F407_health_check
 
 
 ######################################
@@ -42,11 +42,14 @@ Core/Src/stm32f4xx_it.c \
 Core/Src/stm32f4xx_hal_msp.c \
 Srv/Src/rtos.c \
 Srv/Src/temperature_service.c \
+Srv/Src/time_service.c \
 Periph/Src/onewire.c \
 Periph/Src/ds18b20.c \
 Periph/Src/rs485.c \
+Periph/Src/rtc.c \
 LWIP/App/lwip.c \
 LWIP/Target/ethernetif.c \
+LWIP/Target/sys_arch.c \
 FreeRTOS-Kernel/list.c \
 FreeRTOS-Kernel/queue.c \
 FreeRTOS-Kernel/tasks.c \
@@ -94,6 +97,7 @@ Middlewares/Third_Party/LwIP/src/core/ipv4/icmp.c \
 Middlewares/Third_Party/LwIP/src/core/ipv4/ip4.c \
 Middlewares/Third_Party/LwIP/src/core/ipv4/ip4_frag.c \
 Middlewares/Third_Party/LwIP/src/core/ipv4/ip4_addr.c \
+Middlewares/Third_Party/LwIP/src/api/tcpip.c \
 Core/Src/sysmem.c \
 Core/Src/syscalls.c  
 

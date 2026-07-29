@@ -1,7 +1,7 @@
 /**
   ******************************************************************************
   * @file           : lwip.c
-  * @brief          : Bare-metal lwIP initialization and polling.
+  * @brief          : FreeRTOS-aware lwIP initialization and Ethernet polling.
   * @project        : STM32F407 Health Check
   * @platform       : STMicroelectronics STM32F407VET6
   * @created        : 13.01.2026
@@ -23,32 +23,77 @@
 #include "ethernetif.h"
 #include "lwip/dhcp.h"
 #include "lwip/dns.h"
-#include "lwip/init.h"
-#include "lwip/timeouts.h"
+#include "lwip/tcpip.h"
 #include "netif/ethernet.h"
 
 #include <stdio.h>
 
 #define LWIP_LINK_POLL_PERIOD_MS 100U
 #define LWIP_DHCP_TIMEOUT_MS     10000U
+#define LWIP_INIT_TIMEOUT_MS     5000U
 
 struct netif gnetif;
 
+static sys_sem_t lwipInitSemaphore;
+static volatile Lwip_StatusTypeDef lwipInitStatus;
 static uint32_t lwipLinkPollTick;
 static uint32_t lwipDhcpWaitStartTick;
 static uint8_t lwipNetworkConfigurationReported;
 static uint8_t lwipStaticFallbackActive;
+static volatile uint8_t lwipNetworkReady;
+
+static void lwip_CoreInit(void* argument);
 static void lwip_LinkStatusChanged(struct netif* netif);
 static void lwip_StartDhcp(void);
 static void lwip_ApplyStaticConfiguration(void);
 static void lwip_ReportNetworkConfiguration(const char* source);
+static void lwip_ProcessConfiguration(uint32_t now);
 
 Lwip_StatusTypeDef Lwip_Init(void) {
+  if (sys_sem_new(&lwipInitSemaphore, 0U) != ERR_OK)
+    return LWIP_STATUS_INTERFACE_ERROR;
+
+  lwipInitStatus = LWIP_STATUS_INTERFACE_ERROR;
+  tcpip_init(lwip_CoreInit, NULL);
+  if (sys_arch_sem_wait(
+        &lwipInitSemaphore,
+        LWIP_INIT_TIMEOUT_MS
+      ) == SYS_ARCH_TIMEOUT) {
+    sys_sem_free(&lwipInitSemaphore);
+    return LWIP_STATUS_INTERFACE_ERROR;
+  }
+
+  sys_sem_free(&lwipInitSemaphore);
+  return lwipInitStatus;
+}
+
+void Lwip_Process(void) {
+  ethernetif_input(&gnetif);
+
+  uint32_t now = HAL_GetTick();
+  if ((now - lwipLinkPollTick) < LWIP_LINK_POLL_PERIOD_MS)
+    return;
+
+  lwipLinkPollTick = now;
+  LOCK_TCPIP_CORE();
+  ethernet_link_check_state(&gnetif);
+  lwip_ProcessConfiguration(now);
+  UNLOCK_TCPIP_CORE();
+}
+
+uint8_t Lwip_IsReady(void) {
+  return lwipNetworkReady;
+}
+
+/**
+  * @brief Initialize the netif from the exclusive lwIP TCP/IP thread.
+  * @param argument (void*) Unused initialization argument.
+  */
+static void lwip_CoreInit(void* argument) {
+  (void)argument;
   ip4_addr_t address = {0};
   ip4_addr_t netmask = {0};
   ip4_addr_t gateway = {0};
-
-  lwip_init();
 
   if (netif_add(
         &gnetif,
@@ -57,9 +102,11 @@ Lwip_StatusTypeDef Lwip_Init(void) {
         &gateway,
         NULL,
         ethernetif_init,
-        ethernet_input
+        tcpip_input
       ) == NULL) {
-    return LWIP_STATUS_INTERFACE_ERROR;
+    lwipInitStatus = LWIP_STATUS_INTERFACE_ERROR;
+    sys_sem_signal(&lwipInitSemaphore);
+    return;
   }
 
   netif_set_default(&gnetif);
@@ -67,6 +114,7 @@ Lwip_StatusTypeDef Lwip_Init(void) {
   lwipDhcpWaitStartTick = HAL_GetTick();
   lwipNetworkConfigurationReported = 0U;
   lwipStaticFallbackActive = 0U;
+  lwipNetworkReady = 0U;
 
   if (netif_is_link_up(&gnetif)) {
     netif_set_up(&gnetif);
@@ -75,19 +123,15 @@ Lwip_StatusTypeDef Lwip_Init(void) {
     netif_set_down(&gnetif);
   }
 
-  return LWIP_STATUS_OK;
+  lwipInitStatus = LWIP_STATUS_OK;
+  sys_sem_signal(&lwipInitSemaphore);
 }
 
-void Lwip_Process(void) {
-  ethernetif_input(&gnetif);
-  sys_check_timeouts();
-
-  uint32_t now = HAL_GetTick();
-  if ((now - lwipLinkPollTick) >= LWIP_LINK_POLL_PERIOD_MS) {
-    lwipLinkPollTick = now;
-    ethernet_link_check_state(&gnetif);
-  }
-
+/**
+  * @brief Process DHCP completion and static fallback from the core lock.
+  * @param now (uint32_t) Current HAL tick in milliseconds.
+  */
+static void lwip_ProcessConfiguration(uint32_t now) {
   if (!netif_is_link_up(&gnetif)) {
     if (ip4_addr_isany_val(*netif_ip4_addr(&gnetif))
         && ((now - lwipDhcpWaitStartTick) >= LWIP_DHCP_TIMEOUT_MS)) {
@@ -105,9 +149,8 @@ void Lwip_Process(void) {
     return;
   }
 
-  if (!ip4_addr_isany_val(*netif_ip4_addr(&gnetif))) {
+  if (!ip4_addr_isany_val(*netif_ip4_addr(&gnetif)))
     return;
-  }
 
   if ((now - lwipDhcpWaitStartTick) >= LWIP_DHCP_TIMEOUT_MS)
     lwip_ApplyStaticConfiguration();
@@ -124,10 +167,11 @@ static void lwip_LinkStatusChanged(struct netif* netif) {
   lwipDhcpWaitStartTick = HAL_GetTick();
   lwipNetworkConfigurationReported = 0U;
   lwipStaticFallbackActive = 0U;
+  lwipNetworkReady = 0U;
 }
 
 /**
-  * @brief Start DHCP only after the Ethernet interface is administratively up.
+  * @brief Start DHCP after the Ethernet interface is up.
   */
 static void lwip_StartDhcp(void) {
   netif_set_addr(
@@ -139,12 +183,13 @@ static void lwip_StartDhcp(void) {
   dns_setserver(0U, IP_ADDR_ANY);
   lwipDhcpWaitStartTick = HAL_GetTick();
   lwipStaticFallbackActive = 0U;
+  lwipNetworkReady = 0U;
   if (dhcp_start(&gnetif) != ERR_OK)
     lwip_ApplyStaticConfiguration();
 }
 
 /**
-  * @brief Stop DHCP and configure the documented fallback IPv4 parameters.
+  * @brief Configure the documented fallback IPv4 parameters.
   */
 static void lwip_ApplyStaticConfiguration(void) {
   ip4_addr_t address;
@@ -202,4 +247,5 @@ static void lwip_ReportNetworkConfiguration(const char* source) {
     (unsigned int)ip4_addr4(dnsAddress)
   );
   lwipNetworkConfigurationReported = 1U;
+  lwipNetworkReady = netif_is_link_up(&gnetif) ? 1U : 0U;
 }
