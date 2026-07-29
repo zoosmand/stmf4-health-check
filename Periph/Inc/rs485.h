@@ -36,8 +36,6 @@ HAL_StatusTypeDef Rs485_Init(void);
   * @brief Transmit one complete buffer and then release the RS485 bus.
   * @param data (const uint8_t*) Buffer to transmit; must not be null.
   * @param length (size_t) Number of bytes to transmit, up to UINT16_MAX.
-  * @note Calls from tasks are serialized by a priority-inheriting mutex.
-  *       Calling from interrupt context is not supported.
   * @retval (HAL_StatusTypeDef) HAL status reported by the blocking transfer.
   */
 HAL_StatusTypeDef Rs485_Transmit(const uint8_t* data, size_t length);

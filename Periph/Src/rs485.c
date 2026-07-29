@@ -20,17 +20,11 @@
 
 #include "rs485.h"
 
-#include "FreeRTOS.h"
-#include "semphr.h"
-#include "task.h"
-
 #define RS485_DIRECTION_PORT GPIOD
 #define RS485_DIRECTION_PIN  GPIO_PIN_7
 #define RS485_TIMEOUT_MS     1000U
 
 static UART_HandleTypeDef rs485Uart;
-static StaticSemaphore_t rs485MutexBuffer;
-static SemaphoreHandle_t rs485Mutex;
 static uint8_t rs485Initialized;
 
 HAL_StatusTypeDef Rs485_Init(void) {
@@ -46,10 +40,6 @@ HAL_StatusTypeDef Rs485_Init(void) {
   if (HAL_UART_Init(&rs485Uart) != HAL_OK)
     return HAL_ERROR;
 
-  rs485Mutex = xSemaphoreCreateMutexStatic(&rs485MutexBuffer);
-  if (rs485Mutex == NULL)
-    return HAL_ERROR;
-
   HAL_GPIO_WritePin(
     RS485_DIRECTION_PORT,
     RS485_DIRECTION_PIN,
@@ -60,7 +50,7 @@ HAL_StatusTypeDef Rs485_Init(void) {
 }
 
 HAL_StatusTypeDef Rs485_Transmit(const uint8_t* data, size_t length) {
-  if ((rs485Initialized == 0U) || (data == NULL) || (rs485Mutex == NULL))
+  if ((rs485Initialized == 0U) || (data == NULL))
     return HAL_ERROR;
 
   if (length == 0U)
@@ -68,13 +58,6 @@ HAL_StatusTypeDef Rs485_Transmit(const uint8_t* data, size_t length) {
 
   if (length > UINT16_MAX)
     return HAL_ERROR;
-
-  BaseType_t schedulerRunning =
-    (xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) ? pdTRUE : pdFALSE;
-  if ((schedulerRunning == pdTRUE)
-      && (xSemaphoreTake(rs485Mutex, portMAX_DELAY) != pdTRUE)) {
-    return HAL_ERROR;
-  }
 
   HAL_GPIO_WritePin(
     RS485_DIRECTION_PORT,
@@ -94,9 +77,6 @@ HAL_StatusTypeDef Rs485_Transmit(const uint8_t* data, size_t length) {
     RS485_DIRECTION_PIN,
     GPIO_PIN_RESET
   );
-
-  if (schedulerRunning == pdTRUE)
-    (void)xSemaphoreGive(rs485Mutex);
 
   return status;
 }

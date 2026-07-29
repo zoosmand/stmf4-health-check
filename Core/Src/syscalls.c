@@ -22,6 +22,8 @@
 
 /* Includes */
 #include "rs485.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 #include <sys/stat.h>
 #include <stdlib.h>
@@ -88,10 +90,18 @@ __attribute__((weak)) int _write(int file, char *ptr, int len)
     return -1;
   }
 
+  BaseType_t schedulerRunning =
+    (xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) ? pdTRUE : pdFALSE;
+  if (schedulerRunning == pdTRUE)
+    vTaskSuspendAll();
+
   HAL_StatusTypeDef status = Rs485_Transmit(
     (const uint8_t*)ptr,
     (size_t)len
   );
+
+  if (schedulerRunning == pdTRUE)
+    (void)xTaskResumeAll();
 
   if (status != HAL_OK) {
     errno = EIO;
