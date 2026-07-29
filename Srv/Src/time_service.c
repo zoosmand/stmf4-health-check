@@ -206,6 +206,12 @@ static void timeService_DnsCallback(
 }
 
 static void timeService_SendRequest(const ip_addr_t* address) {
+  err_t result = udp_connect(ntpPcb, address, TIME_NTP_PORT);
+  if (result != ERR_OK) {
+    syncState = TIME_SYNC_FAILED;
+    return;
+  }
+
   struct pbuf* packet = pbuf_alloc(
     PBUF_TRANSPORT,
     TIME_NTP_PACKET_SIZE,
@@ -218,7 +224,7 @@ static void timeService_SendRequest(const ip_addr_t* address) {
 
   memset(packet->payload, 0, TIME_NTP_PACKET_SIZE);
   ((uint8_t*)packet->payload)[0] = 0x23U;
-  err_t result = udp_sendto(ntpPcb, packet, address, TIME_NTP_PORT);
+  result = udp_send(ntpPcb, packet);
   pbuf_free(packet);
   if (result != ERR_OK)
     syncState = TIME_SYNC_FAILED;
