@@ -44,6 +44,7 @@ Srv/Src/rtos.c \
 Srv/Src/temperature_service.c \
 Periph/Src/onewire.c \
 Periph/Src/ds18b20.c \
+Periph/Src/rs485.c \
 LWIP/App/lwip.c \
 LWIP/Target/ethernetif.c \
 FreeRTOS-Kernel/list.c \
@@ -64,6 +65,7 @@ Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_exti.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_eth.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_iwdg.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_spi.c \
+Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_crc.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rtc.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rtc_ex.c \

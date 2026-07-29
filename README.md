@@ -26,6 +26,7 @@ intentionally left for later issues.
 - Periodic PHY link monitoring
 - Zero-copy Ethernet receive buffers
 - Device-specific locally administered MAC address derived from the STM32 UID
+- Standard output through the onboard RS485 interface
 
 ## RTOS and network architecture
 
@@ -74,6 +75,32 @@ The driver discovers up to six DS18B20 devices, validates ROM and scratchpad
 CRC values, and supports both externally powered and parasitic-powered
 sensors. A FreeRTOS service refreshes measurements every seven seconds and
 rescans the bus once per minute.
+
+## Temporary standard output over RS485
+
+The standard `printf()` output is routed to the board's onboard RS485
+interface. Connect an RS485-to-USB adapter to the `A` and `B` terminals and
+open its serial port with the following settings:
+
+- 115200 baud
+- 8 data bits
+- no parity
+- 1 stop bit
+- no flow control
+
+The firmware uses USART2 on `PD5`/`PD6` and `PD7` for transceiver direction
+control. The interface is currently intended for transmit-only diagnostic
+output. It reports each DS18B20 conversion every seven seconds and prints the
+active Ethernet address, mask, gateway, and primary DNS server when network
+configuration completes.
+
+DHCP is attempted first. If no address is assigned within ten seconds while
+the Ethernet link is up, the firmware applies this fallback configuration:
+
+- IP address: `192.168.0.50`
+- Network mask: `255.255.255.0`
+- Gateway: `192.168.0.1`
+- DNS server: `8.8.8.8`
 
 The Ethernet driver uses blocking transmission with a bounded 20 ms timeout.
 Transmit failures are returned to lwIP. Receive buffers and DMA descriptors
