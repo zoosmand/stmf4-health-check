@@ -53,6 +53,16 @@ void HAL_RTC_MspDeInit(RTC_HandleTypeDef* rtc) {
     __HAL_RCC_RTC_DISABLE();
 }
 
+void HAL_RNG_MspInit(RNG_HandleTypeDef* randomGenerator) {
+  if ((randomGenerator != NULL) && (randomGenerator->Instance == RNG))
+    __HAL_RCC_RNG_CLK_ENABLE();
+}
+
+void HAL_RNG_MspDeInit(RNG_HandleTypeDef* randomGenerator) {
+  if ((randomGenerator != NULL) && (randomGenerator->Instance == RNG))
+    __HAL_RCC_RNG_CLK_DISABLE();
+}
+
 void HAL_SPI_MspInit(SPI_HandleTypeDef* spi) {
   if ((spi == NULL) || (spi->Instance != SPI2))
     return;

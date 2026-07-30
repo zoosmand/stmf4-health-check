@@ -1,10 +1,10 @@
 /**
   ******************************************************************************
-  * @file           : rtc.h
-  * @brief          : Hardware RTC initialization and UTC date/time access.
+  * @file           : health_check_service.h
+  * @brief          : Periodic HTTPS resource health-check service.
   * @project        : STM32F407 Health Check
   * @platform       : STMicroelectronics STM32F407VET6
-  * @created        : 29.07.2026
+  * @created        : 30.07.2026
   ******************************************************************************
   * @attention
   *
@@ -18,27 +18,11 @@
   ******************************************************************************
   */
 
-#ifndef RTC_H
-#define RTC_H
+#ifndef HEALTH_CHECK_SERVICE_H
+#define HEALTH_CHECK_SERVICE_H
 
 #include "main.h"
 
-/**
-  * @brief Calendar representation of the RTC value in UTC.
-  */
-typedef struct {
-  uint16_t year;
-  uint8_t month;
-  uint8_t day;
-  uint8_t hour;
-  uint8_t minute;
-  uint8_t second;
-} Rtc_DateTimeTypeDef;
+ErrorStatus HealthCheckService_Init(void);
 
-HAL_StatusTypeDef Rtc_Init(void);
-HAL_StatusTypeDef Rtc_SetUnixTime(uint32_t unixTime);
-HAL_StatusTypeDef Rtc_GetUnixTime(uint32_t* unixTime);
-HAL_StatusTypeDef Rtc_GetDateTime(Rtc_DateTimeTypeDef* dateTime);
-uint8_t Rtc_IsSynchronized(void);
-
-#endif /* RTC_H */
+#endif /* HEALTH_CHECK_SERVICE_H */
