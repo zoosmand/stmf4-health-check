@@ -26,6 +26,7 @@
 #include "rs485.h"
 #include "rtos.h"
 #include "task.h"
+#include "tls_platform.h"
 
 #include <stdio.h>
 
@@ -46,6 +47,8 @@ int main(void) {
   peripheral_GpioInit();
   peripheral_CrcInit();
   if (Rtc_Init() != HAL_OK)
+    Error_Handler();
+  if (TlsPlatform_Init() != HAL_OK)
     Error_Handler();
   peripheral_Spi2Init();
   if (Rs485_Init() != HAL_OK)

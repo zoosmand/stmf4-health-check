@@ -21,6 +21,7 @@
  */
 
 /* Includes */
+#include "rtc.h"
 #include "rs485.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -60,6 +61,25 @@ int _kill(int pid, int sig)
   (void)sig;
   errno = EINVAL;
   return -1;
+}
+
+int _gettimeofday(struct timeval *timeValue, void *timezone)
+{
+  (void)timezone;
+  if (timeValue == NULL) {
+    errno = EINVAL;
+    return -1;
+  }
+
+  uint32_t unixTime;
+  if (Rtc_GetUnixTime(&unixTime) != HAL_OK) {
+    errno = EIO;
+    return -1;
+  }
+
+  timeValue->tv_sec = (time_t)unixTime;
+  timeValue->tv_usec = 0;
+  return 0;
 }
 
 void _exit (int status)

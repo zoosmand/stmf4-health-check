@@ -31,6 +31,13 @@ OPT = -Og
 # Build path
 BUILD_DIR = build
 
+MBEDTLS_DIR = Middlewares/Third_Party/MbedTLS
+MBEDTLS_SOURCES = $(filter-out \
+$(MBEDTLS_DIR)/library/psa_crypto_storage.c \
+$(MBEDTLS_DIR)/library/psa_its_file.c \
+$(MBEDTLS_DIR)/library/timing.c, \
+$(wildcard $(MBEDTLS_DIR)/library/*.c))
+
 ######################################
 # source
 ######################################
@@ -41,8 +48,12 @@ Core/Src/delay.c \
 Core/Src/stm32f4xx_it.c \
 Core/Src/stm32f4xx_hal_msp.c \
 Srv/Src/rtos.c \
+Srv/Src/health_check_service.c \
 Srv/Src/temperature_service.c \
 Srv/Src/time_service.c \
+TLS/Src/tls_platform.c \
+TLS/Src/tls_transport.c \
+TLS/Src/tls_trust_store.c \
 Periph/Src/onewire.c \
 Periph/Src/ds18b20.c \
 Periph/Src/rs485.c \
@@ -72,6 +83,7 @@ Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_crc.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rtc.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rtc_ex.c \
+Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rng.c \
 Core/Src/system_stm32f4xx.c \
 Middlewares/Third_Party/LwIP/src/netif/ethernet.c \
 Middlewares/Third_Party/LwIP/src/core/memp.c \
@@ -98,8 +110,15 @@ Middlewares/Third_Party/LwIP/src/core/ipv4/ip4.c \
 Middlewares/Third_Party/LwIP/src/core/ipv4/ip4_frag.c \
 Middlewares/Third_Party/LwIP/src/core/ipv4/ip4_addr.c \
 Middlewares/Third_Party/LwIP/src/api/tcpip.c \
+Middlewares/Third_Party/LwIP/src/api/api_lib.c \
+Middlewares/Third_Party/LwIP/src/api/api_msg.c \
+Middlewares/Third_Party/LwIP/src/api/err.c \
+Middlewares/Third_Party/LwIP/src/api/netbuf.c \
+Middlewares/Third_Party/LwIP/src/api/netdb.c \
+Middlewares/Third_Party/LwIP/src/api/sockets.c \
 Core/Src/sysmem.c \
-Core/Src/syscalls.c  
+Core/Src/syscalls.c \
+$(MBEDTLS_SOURCES)
 
 # ASM sources
 ASM_SOURCES =  \
@@ -154,7 +173,8 @@ AS_DEFS =
 # C defines
 C_DEFS =  \
 -DUSE_HAL_DRIVER \
--DSTM32F407xx
+-DSTM32F407xx \
+-DMBEDTLS_CONFIG_FILE='<health_checker_mbedtls_config.h>'
 
 
 # AS includes
@@ -164,6 +184,7 @@ AS_INCLUDES =
 C_INCLUDES =  \
 -ILWIP/App \
 -ILWIP/Target \
+-ITLS/Inc \
 -ICore/Inc \
 -IPeriph/Inc \
 -ISrv/Inc \
@@ -171,6 +192,7 @@ C_INCLUDES =  \
 -IFreeRTOS-Kernel/portable/GCC/ARM_CM4F \
 -IMiddlewares/Third_Party/LwIP/src/include \
 -IMiddlewares/Third_Party/LwIP/system \
+-I$(MBEDTLS_DIR)/include \
 -IDrivers/STM32F4xx_HAL_Driver/Inc \
 -IDrivers/STM32F4xx_HAL_Driver/Inc/Legacy \
 -IDrivers/BSP/Components/dp83848 \

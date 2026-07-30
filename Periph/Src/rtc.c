@@ -116,6 +116,28 @@ HAL_StatusTypeDef Rtc_GetDateTime(Rtc_DateTimeTypeDef* dateTime) {
   return HAL_OK;
 }
 
+HAL_StatusTypeDef Rtc_GetUnixTime(uint32_t* unixTime) {
+  if (unixTime == NULL)
+    return HAL_ERROR;
+
+  Rtc_DateTimeTypeDef dateTime;
+  if (Rtc_GetDateTime(&dateTime) != HAL_OK)
+    return HAL_ERROR;
+
+  uint32_t days = 0U;
+  for (uint16_t year = 1970U; year < dateTime.year; ++year)
+    days += rtc_IsLeapYear(year) ? 366UL : 365UL;
+  for (uint8_t month = 1U; month < dateTime.month; ++month)
+    days += rtc_DaysInMonth(dateTime.year, month);
+  days += dateTime.day - 1U;
+
+  *unixTime = (days * RTC_SECONDS_PER_DAY)
+    + ((uint32_t)dateTime.hour * 3600UL)
+    + ((uint32_t)dateTime.minute * 60UL)
+    + dateTime.second;
+  return HAL_OK;
+}
+
 uint8_t Rtc_IsSynchronized(void) {
   return HAL_RTCEx_BKUPRead(&rtc, RTC_BKP_DR0) == RTC_SYNC_MARKER;
 }

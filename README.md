@@ -5,9 +5,10 @@ STM32F407VET6. The long-term goal is to monitor an Internet resource over
 HTTPS, evaluate its HTTP response status, retain diagnostic history, and
 report failures locally.
 
-This branch establishes the Ethernet, timekeeping, and FreeRTOS platform
-baseline. HTTPS, persistent logging, and application health policy are
-intentionally left for later issues.
+The firmware periodically performs an authenticated TLS 1.3 connection and
+an HTTP `HEAD` request to `https://pgw.intraclear.com/`. The resource is
+healthy only when certificate and hostname validation succeed and the server
+returns HTTP status `200`.
 
 ## Current functionality
 
@@ -27,6 +28,8 @@ intentionally left for later issues.
 - Zero-copy Ethernet receive buffers
 - Device-specific locally administered MAC address derived from the STM32 UID
 - Standard output through the onboard RS485 interface
+- Authenticated TLS 1.3 client based on Mbed TLS 3.6 LTS
+- Periodic HTTPS `HEAD` resource health check
 
 ## RTOS and network architecture
 
@@ -57,6 +60,86 @@ operational. With the LSI clock, prescaler 256, and reload value 4095, its
 nominal timeout is approximately 32 seconds. Starting it after Ethernet
 initialization prevents the board-required PHY delay from consuming the
 watchdog window.
+
+## HTTPS health check
+
+The health-check service waits until Ethernet is ready and the RTC has been
+synchronized by NTP. It then resolves `pgw.intraclear.com`, opens TCP port
+443, and establishes TLS 1.3 with mandatory certificate and hostname
+validation. The client sends:
+
+```http
+HEAD / HTTP/1.1
+Host: pgw.intraclear.com
+Connection: close
+```
+
+Only the bounded HTTP status line is read; the response body is neither
+requested nor retained. A check runs once per minute and reports the TLS
+version, cipher suite, HTTP status, elapsed time, and final health verdict
+through `printf()`.
+
+The firmware trusts the USERTrust RSA Certification Authority used by the
+target server's current certificate chain. The embedded trust anchor must be
+reviewed whenever the target changes its certification chain and before the
+root expires. Correct RTC time is a security requirement, not merely a
+logging convenience.
+
+TLS uses the STM32 hardware random-number generator. A dedicated 52 KB Mbed
+TLS allocation arena resides in CPU-only CCM RAM, keeping ordinary SRAM
+available to FreeRTOS, lwIP, and Ethernet DMA. The transport layer is kept
+independent of STM32F407 peripheral details to ease migration to STM32F767
+and STM32F769.
+
+### Health-check diagnostics
+
+A successful check resembles:
+
+```text
+HTTPS check: https://pgw.intraclear.com
+TLS: TLSv1.3, <cipher suite>, certificate valid
+HTTP HEAD: 200, <elapsed time> ms
+Resource health: OK
+```
+
+Failures are reported as:
+
+```text
+HTTPS failure: stage=<stage>, detail=<detail>, <elapsed time> ms
+Resource health: FAILED
+```
+
+The `stage` value identifies the failed layer:
+
+| Stage | Meaning |
+|------:|---------|
+| `0` | Transport completed successfully. |
+| `1` | DNS lookup failed. |
+| `2` | TCP socket creation or connection failed. |
+| `3` | Local TLS configuration, entropy, allocation, or request construction failed. |
+| `4` | Trust-anchor parsing or peer-certificate validation failed. |
+| `5` | TLS 1.3 handshake failed for a reason other than certificate validation. |
+| `6` | Encrypted request transmission failed. |
+| `7` | The HTTP status line could not be received or parsed. |
+
+The meaning of `detail` depends on the stage:
+
+- Stage `1` contains the lwIP `getaddrinfo()` result.
+- Stage `2` contains a negative socket `errno`. Common values include `-12`
+  for insufficient lwIP memory, `-100` for a down network, `-101` for an
+  unreachable network or gateway, `-105` for an internal lwIP buffer or
+  source-port allocation failure, `-110` for a timeout, and `-111` for a
+  refused connection.
+- Stages `3` through `7` normally contain a negative Mbed TLS error code.
+  A socket I/O failure instead preserves its negative `errno`, while an
+  expired socket timeout is reported as `MBEDTLS_ERR_SSL_TIMEOUT`. The other
+  exception is an HTTP status such as `404` or `503`: transport still
+  completes with stage `0`, `detail=0`, and the received status is shown by
+  `HTTP HEAD`; the final resource verdict is nevertheless `FAILED`.
+
+`detail=0` means that the completed operation supplied no lower-level error.
+The numeric detail is intended for diagnosis and must not replace the final
+health verdict.
 
 ## Onboard NOR Flash
 
@@ -135,7 +218,8 @@ DMA targets in that section.
 - `LWIP/App/` — application-level lwIP initialization and polling
 - `LWIP/Target/` — STM32 Ethernet MAC and DP83848 adaptation
 - `Drivers/` — ST HAL, CMSIS, and PHY vendor sources
-- `Middlewares/` — complete imported lwIP source distribution
+- `TLS/` — platform adaptation, trust store, and HTTPS transport
+- `Middlewares/` — imported lwIP and Mbed TLS source distributions
 
 Vendor source trees are retained intact. The Makefile selects only the HAL and
 lwIP modules required by the current firmware.
@@ -145,12 +229,16 @@ lwIP modules required by the current firmware.
 Use the GNU Arm Embedded toolchain:
 
 ```sh
+git submodule update --init --recursive
 make clean
 make -j4
 ```
 
 ELF, HEX, BIN, map, dependency, and listing files are generated under
 `build/`.
+
+The Mbed TLS submodule is pinned to the 3.6 LTS line. The current build uses
+approximately 298 KB of Flash, 76 KB of ordinary SRAM, and 52 KB of CCM RAM.
 
 ---
 

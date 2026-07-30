@@ -35,7 +35,9 @@
             "${workspaceRoot}/FreeRTOS-Kernel/include",
             "${workspaceRoot}/FreeRTOS-Kernel/portable/GCC/ARM_CM4F",
             "${workspaceRoot}/Srv/Inc",
-            "${workspaceRoot}/Periph/Inc"
+            "${workspaceRoot}/Periph/Inc",
+            "${workspaceRoot}/TLS/Inc",
+            "${workspaceRoot}/Middlewares/Third_Party/MbedTLS/include"
          ],
          "defines": [
             "DEBUG",

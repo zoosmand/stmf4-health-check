@@ -21,6 +21,7 @@
 #include "rtos.h"
 
 #include "FreeRTOS.h"
+#include "health_check_service.h"
 #include "lwip.h"
 #include "main.h"
 #include "task.h"
@@ -54,6 +55,8 @@ Rtos_StatusTypeDef Rtos_Init(void) {
   if (TemperatureService_Init() != SUCCESS)
     return RTOS_STATUS_TASK_ERROR;
   if (TimeService_Init() != SUCCESS)
+    return RTOS_STATUS_TASK_ERROR;
+  if (HealthCheckService_Init() != SUCCESS)
     return RTOS_STATUS_TASK_ERROR;
 
   TaskHandle_t taskHandle = xTaskCreateStatic(
