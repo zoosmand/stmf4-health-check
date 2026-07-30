@@ -24,6 +24,7 @@
 #include "lwip/sockets.h"
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/entropy.h"
+#include "mbedtls/net_sockets.h"
 #include "mbedtls/ssl.h"
 #include "mbedtls/x509_crt.h"
 #include "tls_trust_store.h"
@@ -35,14 +36,38 @@
 #define TLS_TRANSPORT_TIMEOUT_MS       10000
 #define TLS_TRANSPORT_STATUS_LINE_SIZE 128U
 
+typedef struct {
+  int socketDescriptor;
+  int lastError;
+} TlsTransport_SocketContextTypeDef;
+
+static uint8_t tlsTransport_IsTimeoutError(int socketError) {
+  return ((socketError == EAGAIN)
+      || (socketError == EWOULDBLOCK)
+      || (socketError == ETIMEDOUT))
+    ? 1U
+    : 0U;
+}
+
 static int tlsTransport_Send(
   void* context,
   const unsigned char* data,
   size_t length
 ) {
-  int socketDescriptor = *(int*)context;
-  int sent = lwip_send(socketDescriptor, data, length, 0);
-  return sent >= 0 ? sent : MBEDTLS_ERR_SSL_WANT_WRITE;
+  TlsTransport_SocketContextTypeDef* socketContext = context;
+  int sent = lwip_send(
+    socketContext->socketDescriptor,
+    data,
+    length,
+    0
+  );
+  if (sent >= 0)
+    return sent;
+
+  socketContext->lastError = errno;
+  return (tlsTransport_IsTimeoutError(socketContext->lastError) != 0U)
+    ? MBEDTLS_ERR_SSL_TIMEOUT
+    : MBEDTLS_ERR_NET_SEND_FAILED;
 }
 
 static int tlsTransport_Receive(
@@ -50,13 +75,22 @@ static int tlsTransport_Receive(
   unsigned char* data,
   size_t length
 ) {
-  int socketDescriptor = *(int*)context;
-  int received = lwip_recv(socketDescriptor, data, length, 0);
+  TlsTransport_SocketContextTypeDef* socketContext = context;
+  int received = lwip_recv(
+    socketContext->socketDescriptor,
+    data,
+    length,
+    0
+  );
   if (received > 0)
     return received;
   if (received == 0)
     return MBEDTLS_ERR_SSL_CONN_EOF;
-  return MBEDTLS_ERR_SSL_TIMEOUT;
+
+  socketContext->lastError = errno;
+  return (tlsTransport_IsTimeoutError(socketContext->lastError) != 0U)
+    ? MBEDTLS_ERR_SSL_TIMEOUT
+    : MBEDTLS_ERR_NET_RECV_FAILED;
 }
 
 static int tlsTransport_Connect(
@@ -212,6 +246,10 @@ TlsTransport_StatusTypeDef TlsTransport_Head(
   result->status = TLS_TRANSPORT_CONFIG_ERROR;
   uint32_t started = HAL_GetTick();
   int socketDescriptor = -1;
+  TlsTransport_SocketContextTypeDef socketContext = {
+    .socketDescriptor = -1,
+    .lastError = 0,
+  };
 
   mbedtls_ssl_context ssl;
   mbedtls_ssl_config config;
@@ -282,9 +320,10 @@ TlsTransport_StatusTypeDef TlsTransport_Head(
   if (socketDescriptor < 0) {
     goto cleanup;
   }
+  socketContext.socketDescriptor = socketDescriptor;
   mbedtls_ssl_set_bio(
     &ssl,
-    &socketDescriptor,
+    &socketContext,
     tlsTransport_Send,
     tlsTransport_Receive,
     NULL
@@ -342,6 +381,8 @@ TlsTransport_StatusTypeDef TlsTransport_Head(
   detail = 0;
 
 cleanup:
+  if ((detail != 0) && (socketContext.lastError != 0))
+    detail = -socketContext.lastError;
   result->detail = detail;
   result->elapsedMs = HAL_GetTick() - started;
   if (socketDescriptor >= 0) {

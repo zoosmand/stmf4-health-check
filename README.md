@@ -131,7 +131,9 @@ The meaning of `detail` depends on the stage:
   source-port allocation failure, `-110` for a timeout, and `-111` for a
   refused connection.
 - Stages `3` through `7` normally contain a negative Mbed TLS error code.
-  The exception is an HTTP status such as `404` or `503`: transport still
+  A socket I/O failure instead preserves its negative `errno`, while an
+  expired socket timeout is reported as `MBEDTLS_ERR_SSL_TIMEOUT`. The other
+  exception is an HTTP status such as `404` or `503`: transport still
   completes with stage `0`, `detail=0`, and the received status is shown by
   `HTTP HEAD`; the final resource verdict is nevertheless `FAILED`.
 
