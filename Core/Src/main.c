@@ -47,10 +47,11 @@ int main(void) {
   peripheral_CrcInit();
   if (Rtc_Init() != HAL_OK)
     Error_Handler();
-  peripheral_Spi2Init();
   if (Rs485_Init() != HAL_OK)
     Error_Handler();
   printf("RS485 standard output ready.\r\n");
+
+  peripheral_Spi2Init();
 
   /*
    * This board's Ethernet PHY is not ready immediately after power-up.

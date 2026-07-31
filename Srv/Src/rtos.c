@@ -22,6 +22,8 @@
 
 #include "FreeRTOS.h"
 #include "api_service.h"
+#include "health_check_config.h"
+#include "health_check_log.h"
 #include "health_check_service.h"
 #include "lwip.h"
 #include "main.h"
@@ -29,9 +31,12 @@
 #include "temperature_service.h"
 #include "time_service.h"
 #include "tls_platform.h"
+#include "tls_server_credentials.h"
+#include "w25q64.h"
 
 #define DEFAULT_TASK_STACK_DEPTH 128U
 #define NETWORK_TASK_STACK_DEPTH 1024U
+#define STARTUP_TASK_STACK_DEPTH 512U
 #define DEFAULT_TASK_PERIOD_MS   1000U
 #define NETWORK_TASK_PERIOD_MS   1U
 
@@ -40,6 +45,8 @@ static StaticTask_t defaultTaskControlBlock;
 static StackType_t defaultTaskStack[DEFAULT_TASK_STACK_DEPTH];
 static StaticTask_t networkTaskControlBlock;
 static StackType_t networkTaskStack[NETWORK_TASK_STACK_DEPTH];
+static StaticTask_t startupTaskControlBlock;
+static StackType_t startupTaskStack[STARTUP_TASK_STACK_DEPTH];
 
 /**
   * @brief Reserved application task for future health-check coordination.
@@ -52,21 +59,9 @@ static void rtos_DefaultTask(void* argument);
   * @param argument (void*) Unused task argument.
   */
 static void rtos_NetworkTask(void* argument);
+static void rtos_StartupTask(void* argument);
 
 Rtos_StatusTypeDef Rtos_Init(void) {
-  printf("RTOS init: API task.\r\n");
-  if (ApiService_Init() != HAL_OK)
-    return RTOS_STATUS_TASK_ERROR;
-  printf("RTOS init: temperature task.\r\n");
-  if (TemperatureService_Init() != SUCCESS)
-    return RTOS_STATUS_TASK_ERROR;
-  printf("RTOS init: time task.\r\n");
-  if (TimeService_Init() != SUCCESS)
-    return RTOS_STATUS_TASK_ERROR;
-  printf("RTOS init: health-check task.\r\n");
-  if (HealthCheckService_Init() != SUCCESS)
-    return RTOS_STATUS_TASK_ERROR;
-
   printf("RTOS init: default task.\r\n");
   TaskHandle_t taskHandle = xTaskCreateStatic(
     rtos_DefaultTask,
@@ -80,8 +75,42 @@ Rtos_StatusTypeDef Rtos_Init(void) {
   if (taskHandle == NULL)
     return RTOS_STATUS_TASK_ERROR;
 
-  printf("RTOS init: network task.\r\n");
+  printf("RTOS init: startup task.\r\n");
   taskHandle = xTaskCreateStatic(
+    rtos_StartupTask,
+    "startup",
+    STARTUP_TASK_STACK_DEPTH,
+    NULL,
+    tskIDLE_PRIORITY + 3U,
+    startupTaskStack,
+    &startupTaskControlBlock
+  );
+  if (taskHandle == NULL)
+    return RTOS_STATUS_TASK_ERROR;
+
+  return RTOS_STATUS_OK;
+}
+
+static void rtos_StartupTask(void* argument) {
+  (void)argument;
+
+  if (W25Q64_Init() != HAL_OK)
+    Error_Handler();
+  printf("W25Q64 flash ready.\r\n");
+  if ((HealthCheckConfig_Init() != HAL_OK)
+      || (HealthCheckLog_Init() != HAL_OK)
+      || (TlsServerCredentials_Init() != HAL_OK)) {
+    Error_Handler();
+  }
+
+  if ((ApiService_Init() != HAL_OK)
+      || (TemperatureService_Init() != SUCCESS)
+      || (TimeService_Init() != SUCCESS)
+      || (HealthCheckService_Init() != SUCCESS)) {
+    Error_Handler();
+  }
+
+  TaskHandle_t networkTask = xTaskCreateStatic(
     rtos_NetworkTask,
     "network",
     NETWORK_TASK_STACK_DEPTH,
@@ -90,10 +119,12 @@ Rtos_StatusTypeDef Rtos_Init(void) {
     networkTaskStack,
     &networkTaskControlBlock
   );
-  if (taskHandle == NULL)
-    return RTOS_STATUS_TASK_ERROR;
+  if (networkTask == NULL)
+    Error_Handler();
+  printf("Startup task: services ready.\r\n");
 
-  return RTOS_STATUS_OK;
+  for (;;)
+    vTaskDelay(pdMS_TO_TICKS(1000U));
 }
 
 static void rtos_DefaultTask(void* argument) {

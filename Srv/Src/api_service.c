@@ -22,9 +22,11 @@
 
 #include "FreeRTOS.h"
 #include "auth_service.h"
+#include "ds18b20.h"
+#include "health_check_config.h"
+#include "health_check_log.h"
 #include "lwip.h"
 #include "lwip/sockets.h"
-#include "management_server_credentials.h"
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/net_sockets.h"
@@ -32,8 +34,13 @@
 #include "mbedtls/platform_util.h"
 #include "mbedtls/ssl.h"
 #include "mbedtls/x509_crt.h"
+#include "rtc.h"
 #include "task.h"
+#include "temperature_service.h"
 #include "tls_platform.h"
+#include "tls_server_credentials.h"
+#include "tls_transport.h"
+#include "w25q64.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -43,8 +50,8 @@
 #define API_SERVICE_PORT              443U
 #define API_SERVICE_TASK_STACK_DEPTH  3072U
 #define API_SERVICE_REQUEST_SIZE      1536U
-#define API_SERVICE_RESPONSE_SIZE     1536U
-#define API_SERVICE_BODY_SIZE         512U
+#define API_SERVICE_RESPONSE_SIZE     2048U
+#define API_SERVICE_BODY_SIZE         768U
 #define API_SERVICE_TIMEOUT_MS        10000U
 
 typedef struct {
@@ -237,6 +244,69 @@ static uint8_t apiService_JsonBoolean(
   return 1U;
 }
 
+static uint8_t apiService_JsonNumber(
+  const char* json,
+  const char* key,
+  uint32_t* value
+) {
+  char pattern[40];
+  (void)snprintf(pattern, sizeof(pattern), "\"%s\"", key);
+  const char* cursor = strstr(json, pattern);
+  if (cursor == NULL)
+    return 0U;
+  cursor = strchr(cursor + strlen(pattern), ':');
+  if (cursor == NULL)
+    return 0U;
+  do {
+    ++cursor;
+  } while ((*cursor == ' ') || (*cursor == '\t'));
+  char* end = NULL;
+  unsigned long parsed = strtoul(cursor, &end, 10);
+  if (end == cursor)
+    return 0U;
+  *value = (uint32_t)parsed;
+  return 1U;
+}
+
+static void apiService_HexEncode(
+  const uint8_t* data,
+  size_t length,
+  char* output
+) {
+  static const char digits[] = "0123456789abcdef";
+  for (size_t index = 0U; index < length; ++index) {
+    output[index * 2U] = digits[data[index] >> 4U];
+    output[index * 2U + 1U] = digits[data[index] & 0x0FU];
+  }
+  output[length * 2U] = '\0';
+}
+
+static const char* apiService_TransportStatusText(
+  TlsTransport_StatusTypeDef status
+) {
+  switch (status) {
+    case TLS_TRANSPORT_OK: return "ok";
+    case TLS_TRANSPORT_DNS_ERROR: return "dns_error";
+    case TLS_TRANSPORT_CONNECT_ERROR: return "connect_error";
+    case TLS_TRANSPORT_CONFIG_ERROR: return "config_error";
+    case TLS_TRANSPORT_CERTIFICATE_ERROR: return "certificate_error";
+    case TLS_TRANSPORT_HANDSHAKE_ERROR: return "handshake_error";
+    case TLS_TRANSPORT_IO_ERROR: return "io_error";
+    case TLS_TRANSPORT_PROTOCOL_ERROR: return "protocol_error";
+    default: return "unknown";
+  }
+}
+
+static const char* apiService_Ds18b20StatusText(DS18B20_StatusTypeDef status) {
+  switch (status) {
+    case DS18B20_STATUS_OK: return "ok";
+    case DS18B20_STATUS_BUS: return "bus_error";
+    case DS18B20_STATUS_TIMEOUT: return "timeout";
+    case DS18B20_STATUS_CRC: return "crc_error";
+    default: return "unknown";
+  }
+}
+
 static int apiService_Respond(
   mbedtls_ssl_context* ssl,
   int status,
@@ -273,6 +343,33 @@ static int apiService_Error(
   return apiService_Respond(ssl, status, reason, json);
 }
 
+static int apiService_TlsCredentialsRespond(
+  mbedtls_ssl_context* ssl,
+  TlsServerCredentials_StatusTypeDef status,
+  const char* awaiting
+) {
+  switch (status) {
+    case TLS_SERVER_CREDENTIALS_STATUS_ACTIVATED:
+      return apiService_Respond(ssl, 200, "OK", "{\"status\":\"activated\"}");
+    case TLS_SERVER_CREDENTIALS_STATUS_PENDING: {
+      char json[64];
+      (void)snprintf(
+        json,
+        sizeof(json),
+        "{\"status\":\"pending\",\"awaiting\":\"%s\"}",
+        awaiting
+      );
+      return apiService_Respond(ssl, 202, "Accepted", json);
+    }
+    case TLS_SERVER_CREDENTIALS_STATUS_MISMATCH:
+      return apiService_Error(ssl, 409, "Conflict", "key_mismatch");
+    case TLS_SERVER_CREDENTIALS_STATUS_INVALID_DATA:
+      return apiService_Error(ssl, 400, "Bad Request", "invalid_certificate");
+    default:
+      return apiService_Error(ssl, 500, "Internal Server Error", "storage_error");
+  }
+}
+
 static uint8_t apiService_Authorize(
   const ApiService_RequestTypeDef* request,
   AuthService_PrincipalTypeDef* principal
@@ -305,6 +402,50 @@ static int apiService_Dispatch(
   mbedtls_ssl_context* ssl,
   const ApiService_RequestTypeDef* request
 ) {
+  if ((strcmp(request->method, "GET") == 0)
+      && (strcmp(request->path, "/health") == 0)) {
+    uint8_t networkHealthy = Lwip_IsReady();
+    uint8_t rtcHealthy = Rtc_IsSynchronized();
+    uint8_t flashHealthy = W25Q64_IsAvailable();
+    uint8_t temperatureHealthy = 0U;
+    DS18B20_MeasurementTypeDef measurements[ONEWIRE_MAX_DEVICES];
+    size_t measurementCount = TemperatureService_GetMeasurements(
+      measurements, ONEWIRE_MAX_DEVICES
+    );
+    if (measurementCount != 0U) {
+      temperatureHealthy = 1U;
+      for (size_t index = 0U; index < measurementCount; ++index) {
+        if (measurements[index].status != DS18B20_STATUS_OK) {
+          temperatureHealthy = 0U;
+          break;
+        }
+      }
+    }
+
+    uint8_t healthy = (networkHealthy != 0U)
+      && (rtcHealthy != 0U)
+      && (flashHealthy != 0U)
+      && (temperatureHealthy != 0U);
+    char json[192];
+    (void)snprintf(
+      json,
+      sizeof(json),
+      "{\"status\":\"%s\",\"systems\":{\"api\":true,"
+      "\"network\":%s,\"rtc\":%s,\"flash\":%s,\"temperature\":%s}}",
+      healthy != 0U ? "ok" : "failed",
+      networkHealthy != 0U ? "true" : "false",
+      rtcHealthy != 0U ? "true" : "false",
+      flashHealthy != 0U ? "true" : "false",
+      temperatureHealthy != 0U ? "true" : "false"
+    );
+    return apiService_Respond(
+      ssl,
+      healthy != 0U ? 200 : 503,
+      healthy != 0U ? "OK" : "Service Unavailable",
+      json
+    );
+  }
+
   if ((strcmp(request->method, "POST") == 0)
       && (strcmp(request->path, "/api/v1/auth/token") == 0)) {
     char username[USER_STORE_USERNAME_SIZE];
@@ -489,6 +630,355 @@ static int apiService_Dispatch(
     );
   }
 
+  if ((strcmp(request->method, "DELETE") == 0)
+      && (strncmp(request->path, prefix, strlen(prefix)) == 0)) {
+    if (principal.role != USER_ROLE_ADMINISTRATOR)
+      return apiService_Error(ssl, 403, "Forbidden", "forbidden");
+    char username[USER_STORE_USERNAME_SIZE];
+    (void)strncpy(
+      username, request->path + strlen(prefix), sizeof(username) - 1U
+    );
+    username[sizeof(username) - 1U] = '\0';
+    AuthService_StatusTypeDef status = AuthService_DeleteUser(
+      &principal, username
+    );
+    if (status == AUTH_SERVICE_STATUS_NOT_FOUND)
+      return apiService_Error(ssl, 404, "Not Found", "user_not_found");
+    if (status == AUTH_SERVICE_STATUS_FORBIDDEN)
+      return apiService_Error(ssl, 403, "Forbidden", "forbidden");
+    if (status != AUTH_SERVICE_STATUS_OK)
+      return apiService_Error(
+        ssl, 500, "Internal Server Error", "storage_error"
+      );
+    char json[64];
+    (void)snprintf(
+      json, sizeof(json), "{\"username\":\"%s\",\"deleted\":true}", username
+    );
+    return apiService_Respond(ssl, 200, "OK", json);
+  }
+
+  if ((strcmp(request->method, "PUT") == 0)
+      && (strcmp(request->path, "/api/v1/tls/certificate") == 0)) {
+    if (principal.role != USER_ROLE_ADMINISTRATOR)
+      return apiService_Error(ssl, 403, "Forbidden", "forbidden");
+    TlsServerCredentials_StatusTypeDef status =
+      TlsServerCredentials_StageCertificate(
+        (const uint8_t*)request->body, request->bodyLength
+      );
+    return apiService_TlsCredentialsRespond(ssl, status, "private_key");
+  }
+
+  if ((strcmp(request->method, "PUT") == 0)
+      && (strcmp(request->path, "/api/v1/tls/private-key") == 0)) {
+    if (principal.role != USER_ROLE_ADMINISTRATOR)
+      return apiService_Error(ssl, 403, "Forbidden", "forbidden");
+    TlsServerCredentials_StatusTypeDef status =
+      TlsServerCredentials_StagePrivateKey(
+        (const uint8_t*)request->body, request->bodyLength
+      );
+    return apiService_TlsCredentialsRespond(ssl, status, "certificate");
+  }
+
+  if ((strcmp(request->method, "GET") == 0)
+      && (strcmp(request->path, "/api/v1/health-check/config") == 0)) {
+    if (principal.role != USER_ROLE_ADMINISTRATOR)
+      return apiService_Error(ssl, 403, "Forbidden", "forbidden");
+    HealthCheckConfig_ResourceTypeDef resources[
+      HEALTH_CHECK_CONFIG_MAX_RESOURCES
+    ];
+    HealthCheckConfig_GetResources(resources);
+    char json[API_SERVICE_RESPONSE_SIZE - 192U];
+    size_t used = (size_t)snprintf(
+      json,
+      sizeof(json),
+      "{\"period_seconds\":%lu,\"resources\":[",
+      (unsigned long)HealthCheckConfig_GetPeriodSeconds()
+    );
+    uint8_t first = 1U;
+    for (uint8_t index = 0U; index < HEALTH_CHECK_CONFIG_MAX_RESOURCES; ++index) {
+      if (resources[index].occupied == 0U)
+        continue;
+      int written = snprintf(
+        &json[used],
+        sizeof(json) - used,
+        "%s{\"index\":%u,\"host\":\"%s\",\"port\":%u,\"path\":\"%s\","
+        "\"enabled\":%s}",
+        first != 0U ? "" : ",",
+        (unsigned int)index,
+        resources[index].host,
+        (unsigned int)resources[index].port,
+        resources[index].path,
+        resources[index].enabled != 0U ? "true" : "false"
+      );
+      if ((written <= 0) || ((size_t)written >= (sizeof(json) - used)))
+        return apiService_Error(
+          ssl, 500, "Internal Server Error", "response_too_large"
+        );
+      used += (size_t)written;
+      first = 0U;
+    }
+    (void)snprintf(&json[used], sizeof(json) - used, "]}");
+    return apiService_Respond(ssl, 200, "OK", json);
+  }
+
+  if ((strcmp(request->method, "PUT") == 0)
+      && (strcmp(request->path, "/api/v1/health-check/config") == 0)) {
+    if (principal.role != USER_ROLE_ADMINISTRATOR)
+      return apiService_Error(ssl, 403, "Forbidden", "forbidden");
+    uint32_t periodValue;
+    if (apiService_JsonNumber(
+          request->body, "period_seconds", &periodValue
+        ) == 0U) {
+      return apiService_Error(ssl, 400, "Bad Request", "invalid_request");
+    }
+    HealthCheckConfig_StatusTypeDef status =
+      HealthCheckConfig_SetPeriodSeconds(periodValue);
+    if (status == HEALTH_CHECK_CONFIG_STATUS_INVALID_ARGUMENT)
+      return apiService_Error(ssl, 400, "Bad Request", "invalid_period");
+    if (status != HEALTH_CHECK_CONFIG_STATUS_OK)
+      return apiService_Error(
+        ssl, 500, "Internal Server Error", "storage_error"
+      );
+    char json[48];
+    (void)snprintf(
+      json, sizeof(json), "{\"period_seconds\":%lu}",
+      (unsigned long)periodValue
+    );
+    return apiService_Respond(ssl, 200, "OK", json);
+  }
+
+  if ((strcmp(request->method, "POST") == 0)
+      && (strcmp(request->path, "/api/v1/health-check/resources") == 0)) {
+    if (principal.role != USER_ROLE_ADMINISTRATOR)
+      return apiService_Error(ssl, 403, "Forbidden", "forbidden");
+    char host[HEALTH_CHECK_CONFIG_HOST_SIZE];
+    char path[HEALTH_CHECK_CONFIG_PATH_SIZE];
+    uint32_t portValue;
+    uint8_t enabled = 1U;
+    if ((apiService_JsonString(
+          request->body, "host", host, sizeof(host)
+        ) == 0U)
+        || (apiService_JsonString(
+          request->body, "path", path, sizeof(path)
+        ) == 0U)
+        || (apiService_JsonNumber(
+          request->body, "port", &portValue
+        ) == 0U)) {
+      return apiService_Error(ssl, 400, "Bad Request", "invalid_request");
+    }
+    (void)apiService_JsonBoolean(request->body, "enabled", &enabled);
+    if ((portValue == 0U) || (portValue > 65535U))
+      return apiService_Error(ssl, 400, "Bad Request", "invalid_port");
+    uint8_t assignedIndex = 0U;
+    HealthCheckConfig_StatusTypeDef status = HealthCheckConfig_AddResource(
+      host, (uint16_t)portValue, path, enabled, &assignedIndex
+    );
+    if (status == HEALTH_CHECK_CONFIG_STATUS_FULL)
+      return apiService_Error(ssl, 409, "Conflict", "resource_limit_reached");
+    if (status != HEALTH_CHECK_CONFIG_STATUS_OK)
+      return apiService_Error(ssl, 400, "Bad Request", "invalid_request");
+    char json[256];
+    (void)snprintf(
+      json,
+      sizeof(json),
+      "{\"index\":%u,\"host\":\"%s\",\"port\":%u,\"path\":\"%s\","
+      "\"enabled\":%s}",
+      (unsigned int)assignedIndex,
+      host,
+      (unsigned int)portValue,
+      path,
+      enabled != 0U ? "true" : "false"
+    );
+    return apiService_Respond(ssl, 201, "Created", json);
+  }
+
+  const char* resourcePrefix = "/api/v1/health-check/resources/";
+  uint8_t updatingResource = ((strcmp(request->method, "PUT") == 0)
+      && (strncmp(request->path, resourcePrefix, strlen(resourcePrefix)) == 0));
+  uint8_t deletingResource = ((strcmp(request->method, "DELETE") == 0)
+      && (strncmp(request->path, resourcePrefix, strlen(resourcePrefix)) == 0));
+  if ((updatingResource != 0U) || (deletingResource != 0U)) {
+    if (principal.role != USER_ROLE_ADMINISTRATOR)
+      return apiService_Error(ssl, 403, "Forbidden", "forbidden");
+    const char* indexText = request->path + strlen(resourcePrefix);
+    char* indexEnd;
+    long indexValue = strtol(indexText, &indexEnd, 10);
+    if ((indexEnd == indexText) || (*indexEnd != '\0')
+        || (indexValue < 0)
+        || (indexValue >= HEALTH_CHECK_CONFIG_MAX_RESOURCES)) {
+      return apiService_Error(ssl, 404, "Not Found", "resource_not_found");
+    }
+    uint8_t index = (uint8_t)indexValue;
+
+    if (deletingResource != 0U) {
+      HealthCheckConfig_StatusTypeDef status =
+        HealthCheckConfig_DeleteResource(index);
+      if (status == HEALTH_CHECK_CONFIG_STATUS_NOT_FOUND)
+        return apiService_Error(
+          ssl, 404, "Not Found", "resource_not_found"
+        );
+      if (status != HEALTH_CHECK_CONFIG_STATUS_OK)
+        return apiService_Error(
+          ssl, 500, "Internal Server Error", "storage_error"
+        );
+      char json[48];
+      (void)snprintf(
+        json, sizeof(json), "{\"index\":%u,\"deleted\":true}",
+        (unsigned int)index
+      );
+      return apiService_Respond(ssl, 200, "OK", json);
+    }
+
+    HealthCheckConfig_ResourceTypeDef resources[
+      HEALTH_CHECK_CONFIG_MAX_RESOURCES
+    ];
+    HealthCheckConfig_GetResources(resources);
+    if (resources[index].occupied == 0U)
+      return apiService_Error(ssl, 404, "Not Found", "resource_not_found");
+    char host[HEALTH_CHECK_CONFIG_HOST_SIZE];
+    char path[HEALTH_CHECK_CONFIG_PATH_SIZE];
+    uint32_t portValue = resources[index].port;
+    uint8_t enabled = resources[index].enabled;
+    (void)strncpy(host, resources[index].host, sizeof(host) - 1U);
+    host[sizeof(host) - 1U] = '\0';
+    (void)strncpy(path, resources[index].path, sizeof(path) - 1U);
+    path[sizeof(path) - 1U] = '\0';
+    (void)apiService_JsonString(request->body, "host", host, sizeof(host));
+    (void)apiService_JsonString(request->body, "path", path, sizeof(path));
+    (void)apiService_JsonNumber(request->body, "port", &portValue);
+    (void)apiService_JsonBoolean(request->body, "enabled", &enabled);
+    if ((portValue == 0U) || (portValue > 65535U))
+      return apiService_Error(ssl, 400, "Bad Request", "invalid_port");
+    HealthCheckConfig_StatusTypeDef status = HealthCheckConfig_UpdateResource(
+      index, host, (uint16_t)portValue, path, enabled
+    );
+    if (status == HEALTH_CHECK_CONFIG_STATUS_NOT_FOUND)
+      return apiService_Error(ssl, 404, "Not Found", "resource_not_found");
+    if (status != HEALTH_CHECK_CONFIG_STATUS_OK)
+      return apiService_Error(ssl, 400, "Bad Request", "invalid_request");
+    char json[256];
+    (void)snprintf(
+      json,
+      sizeof(json),
+      "{\"index\":%u,\"host\":\"%s\",\"port\":%u,\"path\":\"%s\","
+      "\"enabled\":%s}",
+      (unsigned int)index,
+      host,
+      (unsigned int)portValue,
+      path,
+      enabled != 0U ? "true" : "false"
+    );
+    return apiService_Respond(ssl, 200, "OK", json);
+  }
+
+  if ((strcmp(request->method, "GET") == 0)
+      && (strcmp(request->path, "/api/v1/health-check/logs") == 0)) {
+    HealthCheckLog_EntryTypeDef entries[HEALTH_CHECK_LOG_MAX_RESULTS];
+    size_t count = HealthCheckLog_GetRecent(
+      entries, HEALTH_CHECK_LOG_MAX_RESULTS
+    );
+    char json[API_SERVICE_RESPONSE_SIZE - 192U];
+    size_t used = (size_t)snprintf(json, sizeof(json), "{\"logs\":[");
+    for (size_t index = 0U; index < count; ++index) {
+      int written = snprintf(
+        &json[used],
+        sizeof(json) - used,
+        "%s{\"sequence\":%lu,\"timestamp\":%lu,\"resource_index\":%u,"
+        "\"status\":\"%s\",\"http_status\":%u,\"elapsed_ms\":%lu,"
+        "\"detail\":%ld}",
+        index == 0U ? "" : ",",
+        (unsigned long)entries[index].sequence,
+        (unsigned long)entries[index].timestampUnix,
+        (unsigned int)entries[index].resourceIndex,
+        apiService_TransportStatusText(
+          (TlsTransport_StatusTypeDef)entries[index].status
+        ),
+        (unsigned int)entries[index].httpStatus,
+        (unsigned long)entries[index].elapsedMs,
+        (long)entries[index].detail
+      );
+      if ((written <= 0) || ((size_t)written >= (sizeof(json) - used)))
+        return apiService_Error(
+          ssl, 500, "Internal Server Error", "response_too_large"
+        );
+      used += (size_t)written;
+    }
+    (void)snprintf(&json[used], sizeof(json) - used, "]}");
+    return apiService_Respond(ssl, 200, "OK", json);
+  }
+
+  if ((strcmp(request->method, "GET") == 0)
+      && (strcmp(request->path, "/api/v1/temperature") == 0)) {
+    DS18B20_MeasurementTypeDef measurements[ONEWIRE_MAX_DEVICES];
+    size_t count = TemperatureService_GetMeasurements(
+      measurements, ONEWIRE_MAX_DEVICES
+    );
+    char json[API_SERVICE_RESPONSE_SIZE - 192U];
+    size_t used = (size_t)snprintf(json, sizeof(json), "{\"sensors\":[");
+    for (size_t index = 0U; index < count; ++index) {
+      char romHex[17];
+      apiService_HexEncode(
+        measurements[index].rom, sizeof(measurements[index].rom), romHex
+      );
+      int written;
+      if (measurements[index].status == DS18B20_STATUS_OK) {
+        written = snprintf(
+          &json[used],
+          sizeof(json) - used,
+          "%s{\"rom\":\"%s\",\"temperature_centi_degrees\":%d,"
+          "\"status\":\"ok\"}",
+          index == 0U ? "" : ",",
+          romHex,
+          (int)measurements[index].temperatureCentiDegrees
+        );
+      } else {
+        written = snprintf(
+          &json[used],
+          sizeof(json) - used,
+          "%s{\"rom\":\"%s\",\"status\":\"%s\"}",
+          index == 0U ? "" : ",",
+          romHex,
+          apiService_Ds18b20StatusText(measurements[index].status)
+        );
+      }
+      if ((written <= 0) || ((size_t)written >= (sizeof(json) - used)))
+        return apiService_Error(
+          ssl, 500, "Internal Server Error", "response_too_large"
+        );
+      used += (size_t)written;
+    }
+    (void)snprintf(&json[used], sizeof(json) - used, "]}");
+    return apiService_Respond(ssl, 200, "OK", json);
+  }
+
+  if ((strcmp(request->method, "GET") == 0)
+      && (strcmp(request->path, "/api/v1/rtc") == 0)) {
+    uint8_t synchronized = Rtc_IsSynchronized();
+    uint32_t unixTime = 0U;
+    Rtc_DateTimeTypeDef dateTime = {0};
+    if (synchronized != 0U) {
+      (void)Rtc_GetUnixTime(&unixTime);
+      (void)Rtc_GetDateTime(&dateTime);
+    }
+    char json[196];
+    (void)snprintf(
+      json,
+      sizeof(json),
+      "{\"unix_time\":%lu,\"synchronized\":%s,\"date_time\":"
+      "{\"year\":%u,\"month\":%u,\"day\":%u,\"hour\":%u,\"minute\":%u,"
+      "\"second\":%u}}",
+      (unsigned long)unixTime,
+      synchronized != 0U ? "true" : "false",
+      (unsigned int)dateTime.year,
+      (unsigned int)dateTime.month,
+      (unsigned int)dateTime.day,
+      (unsigned int)dateTime.hour,
+      (unsigned int)dateTime.minute,
+      (unsigned int)dateTime.second
+    );
+    return apiService_Respond(ssl, 200, "OK", json);
+  }
+
   return apiService_Error(ssl, 404, "Not Found", "not_found");
 }
 
@@ -587,17 +1077,23 @@ static void apiService_Task(void* argument) {
       sizeof(personalization) - 1U
     );
     if (result == 0) {
+      const uint8_t* certificateData;
+      size_t certificateLength;
+      TlsServerCredentials_GetCertificate(&certificateData, &certificateLength);
       result = mbedtls_x509_crt_parse(
         &certificate,
-        managementServerCertificate,
-        sizeof(managementServerCertificate)
+        certificateData,
+        certificateLength
       );
     }
     if (result == 0) {
+      const uint8_t* keyData;
+      size_t keyLength;
+      TlsServerCredentials_GetPrivateKey(&keyData, &keyLength);
       result = mbedtls_pk_parse_key(
         &key,
-        managementServerPrivateKey,
-        sizeof(managementServerPrivateKey),
+        keyData,
+        keyLength,
         NULL,
         0U,
         mbedtls_ctr_drbg_random,

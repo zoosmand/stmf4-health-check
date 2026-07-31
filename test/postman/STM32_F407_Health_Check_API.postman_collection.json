@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a7ed9183-c25b-4ec7-8fc4-df47ca130010",
     "name": "STM32 F407 Health Check API",
-    "description": "Authorization and user-management tests. Set secret password variables locally.",
+    "description": "End-to-end authorization, user, health-check, telemetry, log, and TLS credential tests. Set secret password variables and DER file paths locally.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -12,9 +12,25 @@
     {"key": "accessToken", "value": "", "type": "secret"},
     {"key": "refreshToken", "value": "", "type": "secret"},
     {"key": "testUsername", "value": "operator"},
-    {"key": "testPassword", "value": "", "type": "secret"}
+    {"key": "testPassword", "value": "", "type": "secret"},
+    {"key": "resourceIndex", "value": ""},
+    {"key": "certificateDerPath", "value": "TLS/Private/management_server.crt.der"},
+    {"key": "privateKeyDerPath", "value": "TLS/Private/management_server.key.der"}
   ],
   "item": [
+    {
+      "name": "Get device health",
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test(\"Device is operational\", () => pm.response.to.have.status(200));",
+        "const body = pm.response.json();",
+        "pm.expect(body.status).to.eql(\"ok\");",
+        "pm.expect(body.systems).to.include({api: true, network: true, rtc: true, flash: true, temperature: true});"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/health"
+      }
+    },
     {
       "name": "Request token",
       "event": [{"listen": "test", "script": {"exec": [
@@ -75,6 +91,156 @@
         "method": "PUT",
         "header": [{"key": "Content-Type", "value": "application/json"}],
         "body": {"mode": "raw", "raw": "{\n  \"password\": \"{{testPassword}}\",\n  \"enabled\": true\n}"},
+        "url": "{{baseUrl}}/api/v1/users/{{testUsername}}"
+      }
+    },
+    {
+      "name": "Get RTC",
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test(\"RTC returned\", () => pm.response.to.have.status(200));",
+        "const body = pm.response.json();",
+        "pm.expect(body).to.have.property(\"synchronized\");",
+        "pm.expect(body).to.have.property(\"unix_time\");"
+      ]}}],
+      "request": {
+        "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/rtc"
+      }
+    },
+    {
+      "name": "Get temperature",
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test(\"Temperature returned\", () => pm.response.to.have.status(200));",
+        "pm.expect(pm.response.json().sensors).to.be.an(\"array\");"
+      ]}}],
+      "request": {
+        "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/temperature"
+      }
+    },
+    {
+      "name": "Get health-check configuration",
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test(\"Configuration returned\", () => pm.response.to.have.status(200));",
+        "const body = pm.response.json();",
+        "pm.expect(body.period_seconds).to.be.within(60, 1800);",
+        "pm.expect(body.resources).to.be.an(\"array\");"
+      ]}}],
+      "request": {
+        "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/health-check/config"
+      }
+    },
+    {
+      "name": "Update health-check period",
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test(\"Period updated\", () => pm.response.to.have.status(200));",
+        "pm.expect(pm.response.json().period_seconds).to.eql(60);"
+      ]}}],
+      "request": {
+        "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},
+        "method": "PUT",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\n  \"period_seconds\": 60\n}"},
+        "url": "{{baseUrl}}/api/v1/health-check/config"
+      }
+    },
+    {
+      "name": "Create health-check resource",
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test(\"Resource created\", () => pm.response.to.have.status(201));",
+        "const body = pm.response.json();",
+        "pm.collectionVariables.set(\"resourceIndex\", body.index);"
+      ]}}],
+      "request": {
+        "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\n  \"host\": \"example.com\",\n  \"port\": 443,\n  \"path\": \"/\",\n  \"enabled\": false\n}"},
+        "url": "{{baseUrl}}/api/v1/health-check/resources"
+      }
+    },
+    {
+      "name": "Update health-check resource",
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test(\"Resource updated\", () => pm.response.to.have.status(200));",
+        "pm.expect(pm.response.json().enabled).to.eql(false);"
+      ]}}],
+      "request": {
+        "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},
+        "method": "PUT",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\n  \"path\": \"/health\",\n  \"enabled\": false\n}"},
+        "url": "{{baseUrl}}/api/v1/health-check/resources/{{resourceIndex}}"
+      }
+    },
+    {
+      "name": "Get health-check logs",
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test(\"Logs returned\", () => pm.response.to.have.status(200));",
+        "const logs = pm.response.json().logs;",
+        "pm.expect(logs).to.be.an(\"array\");",
+        "pm.expect(logs.length).to.be.at.most(10);"
+      ]}}],
+      "request": {
+        "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/health-check/logs"
+      }
+    },
+    {
+      "name": "Delete health-check resource",
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test(\"Resource deleted\", () => pm.response.to.have.status(200));",
+        "pm.collectionVariables.unset(\"resourceIndex\");"
+      ]}}],
+      "request": {
+        "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},
+        "method": "DELETE",
+        "url": "{{baseUrl}}/api/v1/health-check/resources/{{resourceIndex}}"
+      }
+    },
+    {
+      "name": "Upload TLS certificate (manual file selection may be required)",
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test(\"Certificate staged or activated\", () => pm.expect([200, 202]).to.include(pm.response.code));"
+      ]}}],
+      "request": {
+        "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},
+        "method": "PUT",
+        "header": [{"key": "Content-Type", "value": "application/octet-stream"}],
+        "body": {"mode": "file", "file": {"src": "{{certificateDerPath}}"}},
+        "url": "{{baseUrl}}/api/v1/tls/certificate",
+        "description": "Generate DER files with tools/convert_credentials_to_der.py. Postman may require selecting the file manually in the Body tab."
+      }
+    },
+    {
+      "name": "Upload TLS private key (manual file selection may be required)",
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test(\"Credential pair activated\", () => pm.response.to.have.status(200));",
+        "pm.expect(pm.response.json().status).to.eql(\"activated\");"
+      ]}}],
+      "request": {
+        "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},
+        "method": "PUT",
+        "header": [{"key": "Content-Type", "value": "application/octet-stream"}],
+        "body": {"mode": "file", "file": {"src": "{{privateKeyDerPath}}"}},
+        "url": "{{baseUrl}}/api/v1/tls/private-key",
+        "description": "Run after the certificate upload. Postman may require selecting the file manually in the Body tab."
+      }
+    },
+    {
+      "name": "Delete user",
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test(\"User deleted\", () => pm.response.to.have.status(200));",
+        "pm.expect(pm.response.json().deleted).to.eql(true);"
+      ]}}],
+      "request": {
+        "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},
+        "method": "DELETE",
         "url": "{{baseUrl}}/api/v1/users/{{testUsername}}"
       }
     },

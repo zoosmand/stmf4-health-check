@@ -414,6 +414,31 @@ AuthService_StatusTypeDef AuthService_PutUser(
   return status;
 }
 
+AuthService_StatusTypeDef AuthService_DeleteUser(
+  const AuthService_PrincipalTypeDef* actor,
+  const char* username
+) {
+  if ((authService_IsAdministrator(actor) == 0U)
+      || (username == NULL)
+      || (strcmp(username, AUTH_SERVICE_MASTER_USERNAME) == 0)) {
+    return AUTH_SERVICE_STATUS_FORBIDDEN;
+  }
+  UserStore_RecordTypeDef record;
+  if (UserStore_Find(username, &record, NULL) != HAL_OK)
+    return AUTH_SERVICE_STATUS_NOT_FOUND;
+  if (UserStore_Delete(username) != HAL_OK)
+    return AUTH_SERVICE_STATUS_STORAGE_ERROR;
+  if (xSemaphoreTake(sessionMutex, portMAX_DELAY) == pdTRUE) {
+    AuthService_SessionTypeDef* session = authService_FindSession(username);
+    if ((session != NULL) && (session->active != 0U)
+        && (strcmp(session->username, username) == 0)) {
+      mbedtls_platform_zeroize(session, sizeof(*session));
+    }
+    (void)xSemaphoreGive(sessionMutex);
+  }
+  return AUTH_SERVICE_STATUS_OK;
+}
+
 size_t AuthService_ListUsers(
   const AuthService_PrincipalTypeDef* actor,
   UserStore_RecordTypeDef* records,
