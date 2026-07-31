@@ -101,7 +101,10 @@ static HAL_StatusTypeDef tlsServerCredentials_Save(
   if ((W25Q64_EraseSector(target) != HAL_OK)
       || (W25Q64_Program(target, candidate, sizeof(*candidate)) != HAL_OK))
     return HAL_ERROR;
-  TlsServerCredentials_SnapshotTypeDef verification;
+  /* Static: activation currently only runs post-scheduler from the api
+     task's own 12 KB stack, but kept static for consistency and to stay
+     safe if this ever gets called from a smaller-stack context. */
+  static TlsServerCredentials_SnapshotTypeDef verification;
   if ((W25Q64_Read(target, &verification, sizeof(verification)) != HAL_OK)
       || (tlsServerCredentials_IsValid(&verification) == 0U)
       || (verification.generation != candidate->generation))
@@ -204,8 +207,13 @@ static TlsServerCredentials_StatusTypeDef tlsServerCredentials_TryActivate(
 }
 
 HAL_StatusTypeDef TlsServerCredentials_Init(void) {
-  TlsServerCredentials_SnapshotTypeDef first;
-  TlsServerCredentials_SnapshotTypeDef second;
+  /*
+   * Static, not stack-local: this function runs pre-scheduler on the
+   * small ~1 KB MSP stack (see STM32F407XX_FLASH.ld's _Min_Stack_Size),
+   * not from within a task's own dedicated stack.
+   */
+  static TlsServerCredentials_SnapshotTypeDef first;
+  static TlsServerCredentials_SnapshotTypeDef second;
   uint8_t firstValid = (W25Q64_Read(
     TLS_SERVER_CREDENTIALS_SECTOR_A, &first, sizeof(first)
   ) == HAL_OK) && tlsServerCredentials_IsValid(&first);

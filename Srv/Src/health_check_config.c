@@ -112,7 +112,9 @@ static HAL_StatusTypeDef healthCheckConfig_Save(
   if ((W25Q64_EraseSector(target) != HAL_OK)
       || (W25Q64_Program(target, candidate, sizeof(*candidate)) != HAL_OK))
     return HAL_ERROR;
-  HealthCheckConfig_SnapshotTypeDef verification;
+  /* Static: this path can run pre-scheduler via HealthCheckConfig_Init()
+     on a fresh/unformatted chip, off the small MSP stack. */
+  static HealthCheckConfig_SnapshotTypeDef verification;
   if ((W25Q64_Read(target, &verification, sizeof(verification)) != HAL_OK)
       || (healthCheckConfig_IsValid(&verification) == 0U)
       || (verification.generation != candidate->generation))
@@ -126,8 +128,13 @@ HAL_StatusTypeDef HealthCheckConfig_Init(void) {
   configMutex = xSemaphoreCreateMutexStatic(&configMutexControlBlock);
   if (configMutex == NULL)
     return HAL_ERROR;
-  HealthCheckConfig_SnapshotTypeDef first;
-  HealthCheckConfig_SnapshotTypeDef second;
+  /*
+   * Static, not stack-local: this function runs pre-scheduler on the
+   * small ~1 KB MSP stack (see STM32F407XX_FLASH.ld's _Min_Stack_Size),
+   * not from within a task's own dedicated stack.
+   */
+  static HealthCheckConfig_SnapshotTypeDef first;
+  static HealthCheckConfig_SnapshotTypeDef second;
   uint8_t firstValid = (W25Q64_Read(
     HEALTH_CHECK_CONFIG_SECTOR_A, &first, sizeof(first)
   ) == HAL_OK) && healthCheckConfig_IsValid(&first);
