@@ -22,7 +22,7 @@ TARGET = F407_health_check
 # debug build?
 DEBUG = 1
 # optimization
-OPT = -Og
+OPT = -O2
 
 
 #######################################
