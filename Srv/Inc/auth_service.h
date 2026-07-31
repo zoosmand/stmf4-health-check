@@ -94,6 +94,10 @@ AuthService_StatusTypeDef AuthService_PutUser(
   uint8_t enabled,
   uint8_t mustExist
 );
+AuthService_StatusTypeDef AuthService_DeleteUser(
+  const AuthService_PrincipalTypeDef* actor,
+  const char* username
+);
 size_t AuthService_ListUsers(
   const AuthService_PrincipalTypeDef* actor,
   UserStore_RecordTypeDef* records,

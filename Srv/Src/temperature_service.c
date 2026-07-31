@@ -22,9 +22,11 @@
 #include "FreeRTOS.h"
 #include "ds18b20.h"
 #include "onewire.h"
+#include "semphr.h"
 #include "task.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #define TEMPERATURE_TASK_STACK_DEPTH 256U
 #define TEMPERATURE_PERIOD_MS        7000U
@@ -34,12 +36,17 @@ static StaticTask_t temperatureTaskControlBlock;
 static StackType_t temperatureTaskStack[TEMPERATURE_TASK_STACK_DEPTH];
 static DS18B20_MeasurementTypeDef measurements[ONEWIRE_MAX_DEVICES];
 static uint8_t measurementCount;
+static StaticSemaphore_t temperatureMutexControlBlock;
+static SemaphoreHandle_t temperatureMutex;
 
 static void temperatureService_Task(void* argument);
 static void temperatureService_PrintMeasurements(void);
 
 ErrorStatus TemperatureService_Init(void) {
-  if (OneWire_Init() != SUCCESS)
+  temperatureMutex = xSemaphoreCreateMutexStatic(
+    &temperatureMutexControlBlock
+  );
+  if ((temperatureMutex == NULL) || (OneWire_Init() != SUCCESS))
     return ERROR;
 
   TaskHandle_t taskHandle = xTaskCreateStatic(
@@ -68,15 +75,23 @@ static void temperatureService_Task(void* argument) {
       lastSearchTick = now;
     }
 
+    DS18B20_MeasurementTypeDef latest[ONEWIRE_MAX_DEVICES];
+    uint8_t latestCount = 0U;
     ErrorStatus conversionStatus = DS18B20_Measure(
-      measurements,
+      latest,
       ONEWIRE_MAX_DEVICES,
-      &measurementCount
+      &latestCount
     );
-    if (conversionStatus == SUCCESS)
+    if (conversionStatus == SUCCESS) {
+      if (xSemaphoreTake(temperatureMutex, portMAX_DELAY) == pdTRUE) {
+        memcpy(measurements, latest, sizeof(latest));
+        measurementCount = latestCount;
+        (void)xSemaphoreGive(temperatureMutex);
+      }
       temperatureService_PrintMeasurements();
-    else
+    } else {
       printf("DS18B20: no sensors available\r\n");
+    }
 
     vTaskDelayUntil(
       &lastWakeTick,
@@ -109,4 +124,18 @@ static void temperatureService_PrintMeasurements(void) {
       );
     }
   }
+}
+
+size_t TemperatureService_GetMeasurements(
+  DS18B20_MeasurementTypeDef* measurementsOut,
+  size_t capacity
+) {
+  if ((measurementsOut == NULL) || (capacity == 0U))
+    return 0U;
+  if (xSemaphoreTake(temperatureMutex, portMAX_DELAY) != pdTRUE)
+    return 0U;
+  size_t count = (measurementCount < capacity) ? measurementCount : capacity;
+  memcpy(measurementsOut, measurements, count * sizeof(*measurementsOut));
+  (void)xSemaphoreGive(temperatureMutex);
+  return count;
 }

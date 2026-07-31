@@ -26,6 +26,7 @@
 #include "rs485.h"
 #include "rtos.h"
 #include "task.h"
+#include "w25q64.h"
 
 #include <stdio.h>
 
@@ -47,10 +48,14 @@ int main(void) {
   peripheral_CrcInit();
   if (Rtc_Init() != HAL_OK)
     Error_Handler();
-  peripheral_Spi2Init();
   if (Rs485_Init() != HAL_OK)
     Error_Handler();
   printf("RS485 standard output ready.\r\n");
+
+  peripheral_Spi2Init();
+  if (W25Q64_Init() != HAL_OK)
+    Error_Handler();
+  printf("W25Q64 flash ready.\r\n");
 
   /*
    * This board's Ethernet PHY is not ready immediately after power-up.

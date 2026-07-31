@@ -51,10 +51,13 @@ Srv/Src/rtos.c \
 Srv/Src/api_service.c \
 Srv/Src/auth_service.c \
 Srv/Src/user_store.c \
+Srv/Src/health_check_config.c \
+Srv/Src/health_check_log.c \
 Srv/Src/health_check_service.c \
 Srv/Src/temperature_service.c \
 Srv/Src/time_service.c \
 TLS/Src/tls_platform.c \
+TLS/Src/tls_server_credentials.c \
 TLS/Src/tls_transport.c \
 TLS/Src/tls_trust_store.c \
 Periph/Src/onewire.c \

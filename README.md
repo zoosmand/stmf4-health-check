@@ -35,7 +35,10 @@ returns HTTP status `200`.
 - Device-specific locally administered MAC address derived from the STM32 UID
 - Standard output through the onboard RS485 interface
 - Authenticated TLS 1.3 client based on Mbed TLS 3.6 LTS
-- Periodic HTTPS `HEAD` resource health check
+- Periodic HTTPS `HEAD` health check against up to three configurable
+  resources, with a persistent, wear-aware result log
+- Bounded HTTPS JSON management API: user CRUD, runtime TLS certificate/key
+  updates, health-check configuration, and temperature/RTC readouts
 
 ## RTOS and network architecture
 
@@ -116,20 +119,26 @@ after login and refresh.
 ## HTTPS health check
 
 The health-check service waits until Ethernet is ready and the RTC has been
-synchronized by NTP. It then resolves `pgw.intraclear.com`, opens TCP port
-443, and establishes TLS 1.3 with mandatory certificate and hostname
-validation. The client sends:
+synchronized by NTP. It then checks up to three independently configured
+resources, each in turn, opening TCP port 443 and establishing TLS 1.3 with
+mandatory certificate and hostname validation. For each resource the client
+sends:
 
 ```http
-HEAD / HTTP/1.1
-Host: pgw.intraclear.com
+HEAD <path> HTTP/1.1
+Host: <host>
 Connection: close
 ```
 
 Only the bounded HTTP status line is read; the response body is neither
-requested nor retained. A check runs once per minute and reports the TLS
-version, cipher suite, HTTP status, elapsed time, and final health verdict
-through `printf()`.
+requested nor retained. All enabled resources are checked once per
+configured period (60 through 1800 seconds, 60 by default) and each reports
+its TLS version, cipher suite, HTTP status, elapsed time, and final health
+verdict through `printf()`. The target host, port, path, period, and each
+resource's enabled state are managed through the [management API](#management-api)
+and persist in Flash; a freshly provisioned device defaults to a single
+resource matching the original hardcoded target
+(`https://pgw.intraclear.com/`).
 
 The firmware trusts the USERTrust RSA Certification Authority used by the
 target server's current certificate chain. The embedded trust anchor must be
@@ -193,6 +202,11 @@ The meaning of `detail` depends on the stage:
 The numeric detail is intended for diagnosis and must not replace the final
 health verdict.
 
+Every completed check, across all configured resources, also appends a
+timestamped record to a persistent ring in Flash. The ten most recent
+records, newest first, are readable through `GET /api/v1/health-check/logs`;
+see [Health-check result log](#health-check-result-log).
+
 ## Onboard NOR Flash
 
 The JZ-F407VET6 carries an 8 MB Winbond W25Q64JV connected to SPI2:
@@ -204,9 +218,32 @@ The JZ-F407VET6 carries an 8 MB Winbond W25Q64JV connected to SPI2:
 
 SPI2 is initialized in mode 0 with an APB1-derived 10.5 MHz clock. Chip select
 is driven high before SPI initialization so the Flash remains deselected
-during startup. The final two sectors form an A/B transactional store for up
-to eight management users. Passwords are represented only by salted
-PBKDF2-HMAC-SHA-256 verifiers; plaintext passwords are never stored.
+during startup. `Periph/Inc/flash_layout.h` centralizes every persistent
+store's sector allocation, counting down from the top of the chip:
+
+| Store | Sectors | Update pattern |
+|---|---|---|
+| Management users | last 2 | A/B transactional; rewritten whenever a user changes. |
+| Health-check config (period + resources) | next 2 | A/B transactional; rewritten only on admin changes. |
+| TLS server certificate/key | next 2 | A/B transactional; rewritten only when the credential is updated. |
+| Health-check result log | next 2 | Wear-aware append-only ring; see below. |
+
+Management users are represented only by salted PBKDF2-HMAC-SHA-256
+verifiers; plaintext passwords are never stored. The A/B pattern rewrites the
+whole snapshot to the inactive sector, verifies the write, and only then
+switches which sector is active — safe against power loss mid-write, and
+appropriate for stores that change rarely (administrator actions only).
+
+The health-check result log changes far more often — potentially every
+check, as frequently as every 20 seconds at the minimum configured period
+with three resources enabled — so it cannot use the same whole-sector
+rewrite pattern without exhausting the Flash's rated erase-cycle life in
+weeks. Instead, records are appended into successive, previously erased
+offsets within the active sector (NOR Flash allows this as long as the same
+bytes are never reprogrammed), and a sector is only erased when it is
+completely full and its turn to be reused comes back around. At the
+worst-case write rate this gives each sector on the order of two decades of
+life against the chip's rated 100,000-erase-cycle floor.
 
 ## Management API
 
@@ -230,17 +267,86 @@ and must never be committed.
 | `GET` | `/api/v1/users` | Administrator bearer | List users without password material. |
 | `POST` | `/api/v1/users` | Administrator bearer | Create a user. |
 | `PUT` | `/api/v1/users/{username}` | Administrator bearer | Replace password and optionally role/enabled state. |
+| `DELETE` | `/api/v1/users/{username}` | Administrator bearer | Remove a user and revoke its active session. |
+| `PUT` | `/api/v1/tls/certificate` | Administrator bearer | Upload a raw DER server certificate; see [Updating the TLS certificate and key](#updating-the-tls-certificate-and-key). |
+| `PUT` | `/api/v1/tls/private-key` | Administrator bearer | Upload a raw DER server private key; see below. |
+| `GET` | `/api/v1/health-check/config` | Administrator bearer | Read the check period and configured resources. |
+| `PUT` | `/api/v1/health-check/config` | Administrator bearer | Set the check period, 60 through 1800 seconds. |
+| `POST` | `/api/v1/health-check/resources` | Administrator bearer | Add a resource (host, port, path, enabled); up to 3. |
+| `PUT` | `/api/v1/health-check/resources/{index}` | Administrator bearer | Replace a resource's fields; unspecified fields keep their current value. |
+| `DELETE` | `/api/v1/health-check/resources/{index}` | Administrator bearer | Clear a resource slot. The slot index is never reassigned to a different resource. |
+| `GET` | `/api/v1/health-check/logs` | Administrator bearer | The ten most recent check results, newest first; see [Health-check result log](#health-check-result-log). |
+| `GET` | `/api/v1/temperature` | Any authenticated bearer | The latest DS18B20 readings. |
+| `GET` | `/api/v1/rtc` | Any authenticated bearer | The current RTC UTC time and synchronization state. |
 
-The built-in administrator username is `master`. Every account has exactly
-one in-memory session: a successful login or refresh creates a new token pair
-and invalidates the old pair. Only SHA-256 token digests are retained. Access
-tokens expire after 15 minutes, refresh tokens after seven days, and all
-sessions disappear on reset. Updating a user also revokes that user's active
-session.
+The built-in administrator username is `master` and cannot be deleted or
+created through the API. Every account has exactly one in-memory session: a
+successful login or refresh creates a new token pair and invalidates the old
+pair. Only SHA-256 token digests are retained. Access tokens expire after 15
+minutes, refresh tokens after seven days, and all sessions disappear on
+reset. Updating or deleting a user also revokes that user's active session.
 
-All request bodies are JSON and all responses, including errors, are JSON.
-Passwords must contain 12 through 128 bytes. Usernames may contain at most 24
-bytes. Requests are deliberately bounded to protect MCU memory.
+Every request body is JSON, and every response, including errors, is JSON —
+**except** the two TLS credential upload endpoints, which take the raw DER
+bytes directly as the request body (`Content-Type: application/octet-stream`,
+no wrapping JSON). Passwords must contain 12 through 128 bytes. Usernames may
+contain at most 24 bytes. Requests are deliberately bounded to protect MCU
+memory.
+
+### Updating the TLS certificate and key
+
+The management server's own certificate and private key can be replaced at
+runtime without a reboot. Convert an existing PEM pair (for example, the one
+`tools/generate_server_certificate.sh` already produced) to DER:
+
+```sh
+python3 tools/convert_credentials_to_der.py
+```
+
+Then upload each half separately as a raw binary body:
+
+```sh
+curl -sk -X PUT https://<device>/api/v1/tls/certificate \
+  -H "Authorization: Bearer $TOKEN" \
+  --data-binary @TLS/Private/management_server.crt.der
+curl -sk -X PUT https://<device>/api/v1/tls/private-key \
+  -H "Authorization: Bearer $TOKEN" \
+  --data-binary @TLS/Private/management_server.key.der
+```
+
+Each upload is parsed and, once both the certificate and a matching private
+key are available — either just uploaded or already active — verified as a
+pair before anything is committed to Flash. A response of
+`{"status":"activated"}` means the new credential is already live: the next
+TLS connection accepted by the management API (including the one carrying
+that very response, on later connections) presents it. A mismatched pair
+returns `409 key_mismatch` and neither half is committed, so uploading only a
+renewed certificate that still matches the currently active key activates
+immediately in one call. `{"status":"pending","awaiting":"private_key"}` (or
+`"certificate"`) means the upload was accepted but is waiting for its
+counterpart. Until a valid pair exists, the compiled-in certificate and key
+from `TLS/Private/management_server_credentials.h` remain in use.
+
+### Health-check result log
+
+`GET /api/v1/health-check/logs` returns the ten most recent completed
+checks, newest first, across every configured resource:
+
+```json
+{"logs":[{"sequence":123456,"timestamp":1785500000,"resource_index":0,
+"status":"ok","http_status":200,"elapsed_ms":845,"detail":0}]}
+```
+
+`resource_index` matches the `index` field from
+`GET /api/v1/health-check/config`. `status` uses the same stage vocabulary as
+the [health-check diagnostics](#health-check-diagnostics) `stage` values
+(`ok`, `dns_error`, `connect_error`, `config_error`, `certificate_error`,
+`handshake_error`, `io_error`, `protocol_error`); `detail` is the same
+layer-specific diagnostic code described there. `sequence` increases
+monotonically and is never reused, even across the log's internal
+sector rollovers, so it is a reliable ordering key independent of
+`timestamp` if the RTC has not yet synchronized when an early record was
+written.
 
 For interactive testing, import
 `test/postman/STM32_F407_Health_Check_API.postman_collection.json` into

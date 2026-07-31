@@ -22,6 +22,8 @@
 
 #include "FreeRTOS.h"
 #include "api_service.h"
+#include "health_check_config.h"
+#include "health_check_log.h"
 #include "health_check_service.h"
 #include "lwip.h"
 #include "main.h"
@@ -29,6 +31,7 @@
 #include "temperature_service.h"
 #include "time_service.h"
 #include "tls_platform.h"
+#include "tls_server_credentials.h"
 
 #define DEFAULT_TASK_STACK_DEPTH 128U
 #define NETWORK_TASK_STACK_DEPTH 1024U
@@ -54,6 +57,16 @@ static void rtos_DefaultTask(void* argument);
 static void rtos_NetworkTask(void* argument);
 
 Rtos_StatusTypeDef Rtos_Init(void) {
+  printf("RTOS init: health-check config store.\r\n");
+  if (HealthCheckConfig_Init() != HAL_OK)
+    return RTOS_STATUS_TASK_ERROR;
+  printf("RTOS init: health-check log store.\r\n");
+  if (HealthCheckLog_Init() != HAL_OK)
+    return RTOS_STATUS_TASK_ERROR;
+  printf("RTOS init: TLS server credential store.\r\n");
+  if (TlsServerCredentials_Init() != HAL_OK)
+    return RTOS_STATUS_TASK_ERROR;
+
   printf("RTOS init: API task.\r\n");
   if (ApiService_Init() != HAL_OK)
     return RTOS_STATUS_TASK_ERROR;

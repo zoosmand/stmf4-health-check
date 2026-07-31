@@ -11,6 +11,7 @@
 #include "user_store.h"
 
 #include "FreeRTOS.h"
+#include "flash_layout.h"
 #include "semphr.h"
 #include "w25q64.h"
 
@@ -18,8 +19,8 @@
 
 #define USER_STORE_MAGIC       0x55534552UL
 #define USER_STORE_VERSION     1U
-#define USER_STORE_SECTOR_A    (W25Q64_CAPACITY_BYTES - (2U * W25Q64_SECTOR_SIZE))
-#define USER_STORE_SECTOR_B    (W25Q64_CAPACITY_BYTES - W25Q64_SECTOR_SIZE)
+#define USER_STORE_SECTOR_A    FLASH_LAYOUT_USER_STORE_SECTOR_A
+#define USER_STORE_SECTOR_B    FLASH_LAYOUT_USER_STORE_SECTOR_B
 
 typedef struct {
   uint32_t magic;
@@ -84,7 +85,7 @@ static HAL_StatusTypeDef userStore_Save(
 
 HAL_StatusTypeDef UserStore_Init(void) {
   storeMutex = xSemaphoreCreateMutexStatic(&storeMutexControlBlock);
-  if ((storeMutex == NULL) || (W25Q64_Init() != HAL_OK))
+  if (storeMutex == NULL)
     return HAL_ERROR;
   UserStore_SnapshotTypeDef first;
   UserStore_SnapshotTypeDef second;
@@ -150,6 +151,30 @@ HAL_StatusTypeDef UserStore_Put(const UserStore_RecordTypeDef* record) {
     ++candidate.count;
   }
   candidate.users[position] = *record;
+  HAL_StatusTypeDef status = userStore_Save(&candidate);
+  (void)xSemaphoreGive(storeMutex);
+  return status;
+}
+
+HAL_StatusTypeDef UserStore_Delete(const char* username) {
+  if (username == NULL)
+    return HAL_ERROR;
+  if (xSemaphoreTake(storeMutex, portMAX_DELAY) != pdTRUE)
+    return HAL_ERROR;
+  UserStore_SnapshotTypeDef candidate = snapshot;
+  uint8_t position;
+  for (position = 0U; position < candidate.count; ++position) {
+    if (strcmp(candidate.users[position].username, username) == 0)
+      break;
+  }
+  if (position == candidate.count) {
+    (void)xSemaphoreGive(storeMutex);
+    return HAL_ERROR;
+  }
+  for (uint8_t tail = position; (tail + 1U) < candidate.count; ++tail)
+    candidate.users[tail] = candidate.users[tail + 1U];
+  memset(&candidate.users[candidate.count - 1U], 0, sizeof(candidate.users[0]));
+  --candidate.count;
   HAL_StatusTypeDef status = userStore_Save(&candidate);
   (void)xSemaphoreGive(storeMutex);
   return status;

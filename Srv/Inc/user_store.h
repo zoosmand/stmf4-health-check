@@ -42,6 +42,7 @@ HAL_StatusTypeDef UserStore_Find(
   uint8_t* index
 );
 HAL_StatusTypeDef UserStore_Put(const UserStore_RecordTypeDef* record);
+HAL_StatusTypeDef UserStore_Delete(const char* username);
 size_t UserStore_List(UserStore_RecordTypeDef* records, size_t capacity);
 
 #endif /* USER_STORE_H */
