@@ -25,6 +25,7 @@
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/pk.h"
+#include "mbedtls/platform_util.h"
 #include "mbedtls/x509_crt.h"
 #include "tls_platform.h"
 #include "w25q64.h"
@@ -60,6 +61,17 @@ static uint8_t certificateStaged;
 static uint8_t pendingKey[TLS_SERVER_CREDENTIALS_MAX_KEY_SIZE];
 static size_t pendingKeyLength;
 static uint8_t keyStaged;
+
+static void tlsServerCredentials_ClearStaging(void) {
+  mbedtls_platform_zeroize(
+    pendingCertificate, sizeof(pendingCertificate)
+  );
+  mbedtls_platform_zeroize(pendingKey, sizeof(pendingKey));
+  pendingCertificateLength = 0U;
+  pendingKeyLength = 0U;
+  certificateStaged = 0U;
+  keyStaged = 0U;
+}
 
 static uint32_t tlsServerCredentials_Crc(const void* data, size_t length) {
   const uint8_t* bytes = data;
@@ -101,9 +113,7 @@ static HAL_StatusTypeDef tlsServerCredentials_Save(
   if ((W25Q64_EraseSector(target) != HAL_OK)
       || (W25Q64_Program(target, candidate, sizeof(*candidate)) != HAL_OK))
     return HAL_ERROR;
-  /* Static: activation currently only runs post-scheduler from the api
-     task's own 12 KB stack, but kept static for consistency and to stay
-     safe if this ever gets called from a smaller-stack context. */
+  /* Static to keep caller stack usage independent of snapshot size. */
   static TlsServerCredentials_SnapshotTypeDef verification;
   if ((W25Q64_Read(target, &verification, sizeof(verification)) != HAL_OK)
       || (tlsServerCredentials_IsValid(&verification) == 0U)
@@ -184,34 +194,33 @@ static TlsServerCredentials_StatusTypeDef tlsServerCredentials_TryActivate(
   mbedtls_entropy_free(&entropy);
 
   if (result != 0) {
-    certificateStaged = 0U;
-    keyStaged = 0U;
+    tlsServerCredentials_ClearStaging();
     return TLS_SERVER_CREDENTIALS_STATUS_INVALID_DATA;
   }
   if (paired == 0U) {
-    certificateStaged = 0U;
-    keyStaged = 0U;
+    if ((certificateStaged == 0U) || (keyStaged == 0U))
+      return TLS_SERVER_CREDENTIALS_STATUS_PENDING;
+    tlsServerCredentials_ClearStaging();
     return TLS_SERVER_CREDENTIALS_STATUS_MISMATCH;
   }
 
   TlsServerCredentials_SnapshotTypeDef candidate = snapshot;
   candidate.certificateLength = (uint16_t)certificateLength;
+  memset(candidate.certificate, 0, sizeof(candidate.certificate));
   memcpy(candidate.certificate, certificateData, certificateLength);
   candidate.keyLength = (uint16_t)keyLength;
+  memset(candidate.key, 0, sizeof(candidate.key));
   memcpy(candidate.key, keyData, keyLength);
-  certificateStaged = 0U;
-  keyStaged = 0U;
-  return (tlsServerCredentials_Save(&candidate) == HAL_OK)
+  TlsServerCredentials_StatusTypeDef status =
+    (tlsServerCredentials_Save(&candidate) == HAL_OK)
     ? TLS_SERVER_CREDENTIALS_STATUS_ACTIVATED
     : TLS_SERVER_CREDENTIALS_STATUS_STORAGE_ERROR;
+  tlsServerCredentials_ClearStaging();
+  return status;
 }
 
 HAL_StatusTypeDef TlsServerCredentials_Init(void) {
-  /*
-   * Static, not stack-local: this function runs pre-scheduler on the
-   * small ~1 KB MSP stack (see STM32F407XX_FLASH.ld's _Min_Stack_Size),
-   * not from within a task's own dedicated stack.
-   */
+  /* Static to keep the startup task's stack bounded. */
   static TlsServerCredentials_SnapshotTypeDef first;
   static TlsServerCredentials_SnapshotTypeDef second;
   uint8_t firstValid = (W25Q64_Read(

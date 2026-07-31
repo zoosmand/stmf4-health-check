@@ -50,7 +50,7 @@
 #define API_SERVICE_TASK_STACK_DEPTH  3072U
 #define API_SERVICE_REQUEST_SIZE      1536U
 #define API_SERVICE_RESPONSE_SIZE     2048U
-#define API_SERVICE_BODY_SIZE         512U
+#define API_SERVICE_BODY_SIZE         768U
 #define API_SERVICE_TIMEOUT_MS        10000U
 
 typedef struct {
@@ -722,7 +722,7 @@ static int apiService_Dispatch(
       return apiService_Error(ssl, 400, "Bad Request", "invalid_request");
     }
     (void)apiService_JsonBoolean(request->body, "enabled", &enabled);
-    if (portValue > 65535U)
+    if ((portValue == 0U) || (portValue > 65535U))
       return apiService_Error(ssl, 400, "Bad Request", "invalid_port");
     uint8_t assignedIndex = 0U;
     HealthCheckConfig_StatusTypeDef status = HealthCheckConfig_AddResource(
@@ -755,10 +755,11 @@ static int apiService_Dispatch(
   if ((updatingResource != 0U) || (deletingResource != 0U)) {
     if (principal.role != USER_ROLE_ADMINISTRATOR)
       return apiService_Error(ssl, 403, "Forbidden", "forbidden");
-    long indexValue = strtol(
-      request->path + strlen(resourcePrefix), NULL, 10
-    );
-    if ((indexValue < 0)
+    const char* indexText = request->path + strlen(resourcePrefix);
+    char* indexEnd;
+    long indexValue = strtol(indexText, &indexEnd, 10);
+    if ((indexEnd == indexText) || (*indexEnd != '\0')
+        || (indexValue < 0)
         || (indexValue >= HEALTH_CHECK_CONFIG_MAX_RESOURCES)) {
       return apiService_Error(ssl, 404, "Not Found", "resource_not_found");
     }
@@ -801,7 +802,7 @@ static int apiService_Dispatch(
     (void)apiService_JsonString(request->body, "path", path, sizeof(path));
     (void)apiService_JsonNumber(request->body, "port", &portValue);
     (void)apiService_JsonBoolean(request->body, "enabled", &enabled);
-    if (portValue > 65535U)
+    if ((portValue == 0U) || (portValue > 65535U))
       return apiService_Error(ssl, 400, "Bad Request", "invalid_port");
     HealthCheckConfig_StatusTypeDef status = HealthCheckConfig_UpdateResource(
       index, host, (uint16_t)portValue, path, enabled

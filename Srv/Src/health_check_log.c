@@ -83,35 +83,45 @@ static uint32_t healthCheckLog_Crc(const void* data, size_t length) {
 /**
   * @brief Count the valid leading records in a sector.
   * @param sector (uint8_t) 0 or 1.
-  * @param count (uint16_t*) Number of consecutive valid records from slot 0.
+  * @param count (uint16_t*) Number of valid records in the used prefix.
+  * @param nextAvailableSlot (uint16_t*) First erased slot after that prefix.
   * @param lastSequence (uint32_t*) Sequence of the last valid record, or 0.
   */
 static void healthCheckLog_ScanSector(
   uint8_t sector,
   uint16_t* count,
+  uint16_t* nextAvailableSlot,
   uint32_t* lastSequence
 ) {
   uint32_t base = healthCheckLog_SectorBase(sector);
   uint16_t valid = 0U;
+  uint16_t next = HEALTH_CHECK_LOG_SLOTS_PER_SECTOR;
   uint32_t sequence = 0U;
   for (uint16_t slot = 0U; slot < HEALTH_CHECK_LOG_SLOTS_PER_SECTOR; ++slot) {
     healthCheckLog_RecordTypeDef record;
     uint32_t address = base + ((uint32_t)slot * sizeof(record));
-    if (W25Q64_Read(address, &record, sizeof(record)) != HAL_OK)
+    if (W25Q64_Read(address, &record, sizeof(record)) != HAL_OK) {
+      next = slot + 1U;
+      continue;
+    }
+    if (record.sequence == HEALTH_CHECK_LOG_ERASED_SEQUENCE) {
+      next = slot;
       break;
-    if (record.sequence == HEALTH_CHECK_LOG_ERASED_SEQUENCE)
-      break;
+    }
     if (record.crc != healthCheckLog_Crc(
           &record, offsetof(healthCheckLog_RecordTypeDef, crc)
         )) {
-      /* A torn write from a power loss mid-program: treat this and
-         everything after it in the sector as unwritten. */
-      break;
+      /* A torn NOR write cannot be retried without an erase. Skip its slot
+         and continue appending at the following erased location. */
+      next = slot + 1U;
+      continue;
     }
-    valid = slot + 1U;
+    ++valid;
+    next = slot + 1U;
     sequence = record.sequence;
   }
   *count = valid;
+  *nextAvailableSlot = next;
   *lastSequence = sequence;
 }
 
@@ -129,9 +139,14 @@ HAL_StatusTypeDef HealthCheckLog_Init(void) {
     return HAL_ERROR;
 
   uint16_t count[2];
+  uint16_t available[2];
   uint32_t lastSequence[2];
-  healthCheckLog_ScanSector(0U, &count[0], &lastSequence[0]);
-  healthCheckLog_ScanSector(1U, &count[1], &lastSequence[1]);
+  healthCheckLog_ScanSector(
+    0U, &count[0], &available[0], &lastSequence[0]
+  );
+  healthCheckLog_ScanSector(
+    1U, &count[1], &available[1], &lastSequence[1]
+  );
 
   if ((count[0] == 0U) && (count[1] == 0U)) {
     nextSequence = 1U;
@@ -139,9 +154,9 @@ HAL_StatusTypeDef HealthCheckLog_Init(void) {
   }
 
   uint8_t active = (lastSequence[0] >= lastSequence[1]) ? 0U : 1U;
-  if (count[active] < HEALTH_CHECK_LOG_SLOTS_PER_SECTOR) {
+  if (available[active] < HEALTH_CHECK_LOG_SLOTS_PER_SECTOR) {
     activeSector = active;
-    nextSlot = count[active];
+    nextSlot = available[active];
     nextSequence = lastSequence[active] + 1U;
     return HAL_OK;
   }
@@ -214,9 +229,16 @@ size_t HealthCheckLog_GetRecent(
 
   uint8_t sectors[2] = { activeSector, (uint8_t)(activeSector ^ 1U) };
   uint16_t counts[2];
+  uint16_t unusedAvailableSlot;
   uint32_t unusedLastSequence;
   counts[0] = nextSlot;
-  healthCheckLog_ScanSector(sectors[1], &counts[1], &unusedLastSequence);
+  healthCheckLog_ScanSector(
+    sectors[1],
+    &counts[1],
+    &unusedAvailableSlot,
+    &unusedLastSequence
+  );
+  counts[1] = unusedAvailableSlot;
 
   size_t written = 0U;
   for (uint8_t pass = 0U; (pass < 2U) && (written < capacity); ++pass) {
@@ -232,7 +254,7 @@ size_t HealthCheckLog_GetRecent(
           || (record.crc != healthCheckLog_Crc(
                 &record, offsetof(healthCheckLog_RecordTypeDef, crc)
               ))) {
-        break;
+        continue;
       }
       entries[written].sequence = record.sequence;
       entries[written].timestampUnix = record.timestampUnix;
