@@ -5,6 +5,11 @@ STM32F407VET6. The long-term goal is to monitor an Internet resource over
 HTTPS, evaluate its HTTP response status, retain diagnostic history, and
 report failures locally.
 
+Project documentation:
+
+- [Naming conventions](docs/NAMING_CONVENTIONS.md)
+- [Supplying ignored source trees in forks](docs/IGNORED_SOURCES.md)
+
 The firmware periodically performs an authenticated TLS 1.3 connection and
 an HTTP `HEAD` request to `https://pgw.intraclear.com/`. The resource is
 healthy only when certificate and hostname validation succeed and the server

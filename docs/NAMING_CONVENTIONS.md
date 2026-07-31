@@ -1,8 +1,9 @@
 # Naming conventions
 
-This document defines the preferred naming style for project-owned code in
-`Core`, `Periph`, `Srv`, and the project-specific Ethernet integration.
-Imported FreeRTOS, CMSIS, ST, and WIZnet code keeps its upstream style.
+This document defines the preferred naming style for project-owned STM32F407
+health-check firmware in `Core`, `Srv`, `LWIP/App`, `LWIP/Target`, and `TLS`.
+Imported FreeRTOS, CMSIS, STM32 HAL, DP83848, lwIP, and Mbed TLS code keeps its
+upstream style.
 
 The conventions describe the target style. Existing names are changed only in
 dedicated refactoring work, because renaming an API can affect several modules.
@@ -12,8 +13,9 @@ dedicated refactoring work, because renaming an API can affect several modules.
 - Use English names that describe purpose rather than implementation detail.
 - Spell out words unless an abbreviation is established in the hardware or
   protocol documentation.
-- Keep hardware names in their canonical form: `DS18B20`, `I2C`, `IWDG`,
-  `SPI`, `SSD13xx`, `TCP`, and `W5500`.
+- Keep hardware and protocol names in their canonical form: `DS18B20`,
+  `DP83848`, `Ethernet`, `HTTPS`, `IWDG`, `lwIP`, `Mbed TLS`, `NTP`, `RMII`,
+  `RTC`, `SPI`, `TLS`, and `W25Q64`.
 - Include units in names when the type alone does not make them clear, for
   example `periodMs`, `temperatureCentiDegrees`, or `humidityMilliPercent`.
 - Avoid new identifiers beginning with an underscore. C reserves several such
@@ -25,13 +27,17 @@ dedicated refactoring work, because renaming an API can affect several modules.
 
 - Use lowercase `snake_case` file names: `health_service.c`.
 - Give a public header the same base name as its implementation file.
-- Peripheral drivers belong in `Periph`; FreeRTOS-based application services
-  belong in `Srv`; startup and application-wide facilities belong in `Core`.
+- STM32 initialization and board-level facilities belong in `Core`;
+  FreeRTOS-based application services belong in `Srv`; project-owned lwIP
+  integration belongs in `LWIP/App` or `LWIP/Target`; TLS configuration,
+  trust data, and transport code belong in `TLS`.
+- Keep imported source files in their upstream directory structure. Do not
+  rename vendor files merely to satisfy this document.
 
 ## Functions
 
 - Public functions use `PascalCase` with a module prefix:
-  `HealthService_Init`, `I2C_Master_Send`, `DS18B20_Measure`.
+  `HealthService_Init`, `Rtc_GetUnixTime`, `TlsTransport_Head`.
 - Private functions use `camelCase` with a module prefix:
   `healthService_WatchdogReload`.
 - Use an underscore between the module name and the operation for new public
@@ -65,7 +71,7 @@ dedicated refactoring work, because renaming an API can affect several modules.
 - Macros that behave like functions use uppercase `SNAKE_CASE` and parenthesize
   every parameter and the complete expression.
 - FreeRTOS handles should identify the owned object, for example
-  `healthTaskHandle` or `i2cMutex`.
+  `healthTaskHandle`, `networkReadyEvent`, or `tlsMutex`.
 
 ## Documentation
 
@@ -77,11 +83,12 @@ Function documentation uses this form:
 
 ```c
 /**
-  * @brief Convert and read every discovered DS18B20 sensor.
-  * @param measurements (DS18B20_Measurement_TypeDef*) Output array.
-  * @param capacity (uint8_t) Number of elements available in the array.
-  * @param count (uint8_t*) Number of entries written.
-  * @retval (ErrorStatus) SUCCESS when at least one device was reported.
+  * @brief Perform an authenticated HTTPS HEAD request.
+  * @param hostName (const char*) Non-null DNS host name used for SNI and
+  *        certificate validation.
+  * @param path (const char*) Non-null HTTP request path.
+  * @param result (TlsTransport_ResultTypeDef*) Non-null result storage.
+  * @retval (TlsTransport_StatusTypeDef) Transport completion status.
   */
 ```
 
@@ -94,14 +101,20 @@ Structure documentation lists the purpose and meaning of every member:
 
 ```c
 /**
-  * @brief Cached measurement and health information for one sensor.
-  * @param model (SensorModel_TypeDef) Detected sensor model.
-  * @param temperature (int32_t) Temperature in hundredths of a degree Celsius.
+  * @brief Result of one HTTPS resource check.
+  * @param statusCode (uint16_t) Parsed HTTP response status.
+  * @param elapsedMs (uint32_t) Total request duration in milliseconds.
+  * @param detail (int32_t) Layer-specific diagnostic value.
   */
 ```
 
 ## Compatibility notes
 
-Issue #15 aligns project-owned identifiers with this convention before the
-FreeRTOS integration. Imported STM32 HAL and WIZnet libraries retain their
-upstream APIs and naming.
+Project-owned adapters may expose conventional names around imported APIs, but
+they must not rewrite vendor interfaces. STM32 HAL callbacks and handles,
+FreeRTOS types, lwIP callbacks, Mbed TLS APIs, CMSIS symbols, and linker/startup
+symbols retain their required upstream spelling.
+
+Names tied to a peripheral register, protocol field, certificate property, or
+datasheet formula should remain traceable to the corresponding specification.
+Compatibility-sensitive renames belong in dedicated refactoring changes.
