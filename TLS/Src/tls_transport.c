@@ -27,6 +27,7 @@
 #include "mbedtls/net_sockets.h"
 #include "mbedtls/ssl.h"
 #include "mbedtls/x509_crt.h"
+#include "tls_platform.h"
 #include "tls_trust_store.h"
 
 #include <errno.h>
@@ -245,6 +246,9 @@ TlsTransport_StatusTypeDef TlsTransport_Head(
   memset(result, 0, sizeof(*result));
   result->status = TLS_TRANSPORT_CONFIG_ERROR;
   uint32_t started = HAL_GetTick();
+  if (TlsPlatform_Lock() != HAL_OK)
+    return result->status;
+
   int socketDescriptor = -1;
   TlsTransport_SocketContextTypeDef socketContext = {
     .socketDescriptor = -1,
@@ -394,5 +398,6 @@ cleanup:
   mbedtls_x509_crt_free(&trustAnchor);
   mbedtls_ctr_drbg_free(&random);
   mbedtls_entropy_free(&entropy);
+  TlsPlatform_Unlock();
   return result->status;
 }

@@ -222,6 +222,9 @@ static void lwip_ReportNetworkConfiguration(const char* source) {
   const ip_addr_t* dnsServer = dns_getserver(0U);
   const ip4_addr_t* dnsAddress = ip_2_ip4(dnsServer);
 
+  lwipNetworkConfigurationReported = 1U;
+  lwipNetworkReady = netif_is_link_up(&gnetif) ? 1U : 0U;
+
   printf(
     "ETH configuration: %s\r\n"
     "ETH IP: %u.%u.%u.%u\r\n"
@@ -246,6 +249,4 @@ static void lwip_ReportNetworkConfiguration(const char* source) {
     (unsigned int)ip4_addr3(dnsAddress),
     (unsigned int)ip4_addr4(dnsAddress)
   );
-  lwipNetworkConfigurationReported = 1U;
-  lwipNetworkReady = netif_is_link_up(&gnetif) ? 1U : 0U;
 }

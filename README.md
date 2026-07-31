@@ -7,6 +7,7 @@ report failures locally.
 
 Project documentation:
 
+- [Development rules](docs/DEVELOPMENT_RULES.md)
 - [Naming conventions](docs/NAMING_CONVENTIONS.md)
 - [Supplying ignored source trees in forks](docs/IGNORED_SOURCES.md)
 
@@ -65,6 +66,52 @@ operational. With the LSI clock, prescaler 256, and reload value 4095, its
 nominal timeout is approximately 32 seconds. Starting it after Ethernet
 initialization prevents the board-required PHY delay from consuming the
 watchdog window.
+
+## Management authentication
+
+The management API authentication foundation stores no plaintext master
+password. Firmware contains a 16-byte random salt and a 32-byte
+PBKDF2-HMAC-SHA-256 verifier in internal Flash. Password verification performs
+100,000 derivation iterations, compares the result in constant time, clears the
+temporary derived value, and serializes access to the shared Mbed TLS allocator.
+
+Generate a new verifier from the repository root:
+
+```sh
+python3 tools/generate_master_verifier.py
+```
+
+The tool reads and confirms the password without echoing it, generates a fresh
+salt, and replaces `Core/Inc/master_password_credentials.h`. Only the salt,
+iteration count, and verifier are written; the plaintext password is not
+retained. Rebuild and reflash the firmware after rotating the password.
+
+For a production device, enable STM32 readout protection Level 1 after final
+programming and verification. Do not enable irreversible Level 2 during
+development. The management API must accept the master password only through
+authenticated HTTPS and use it to issue a short-lived bearer token; bearer
+token handling will be added with the API server.
+
+Generate a local ECDSA P-256 certificate and private key for the HTTPS
+management server:
+
+```sh
+tools/generate_server_certificate.sh health-check.local 192.168.0.50
+```
+
+The generated files are written under the ignored `TLS/Private/` directory.
+The private key must never be committed. The default certificate identifies
+`health-check.local` and the fallback IP address; regenerate it with the
+device's intended DNS name and static IP before deployment. A client must
+explicitly trust the self-signed certificate or its SHA-256 fingerprint.
+
+Import
+`test/postman/STM32_F407_Health_Check_API.postman_collection.json` into
+Postman to test login, token rotation, revocation, and administrator user
+management. Set the secret `masterPassword` and `testPassword` collection
+variables locally and configure Postman to trust the generated certificate.
+The collection automatically replaces its stored access and refresh tokens
+after login and refresh.
 
 ## HTTPS health check
 
@@ -157,8 +204,50 @@ The JZ-F407VET6 carries an 8 MB Winbond W25Q64JV connected to SPI2:
 
 SPI2 is initialized in mode 0 with an APB1-derived 10.5 MHz clock. Chip select
 is driven high before SPI initialization so the Flash remains deselected
-during startup. The storage driver and read/write policy will be added
-separately.
+during startup. The final two sectors form an A/B transactional store for up
+to eight management users. Passwords are represented only by salted
+PBKDF2-HMAC-SHA-256 verifiers; plaintext passwords are never stored.
+
+## Management API
+
+The device exposes a bounded JSON API over TLS 1.3 on TCP port 443. Generate
+the local ECDSA P-256 server certificate and its ignored embedded header
+before building:
+
+```sh
+./tools/generate_server_certificate.sh
+```
+
+Import `TLS/Private/management_server.crt.pem` into the client trust store.
+The private key and generated credential header remain under `TLS/Private/`
+and must never be committed.
+
+| Method | Endpoint | Authorization | Purpose |
+|--------|----------|---------------|---------|
+| `POST` | `/api/v1/auth/token` | None | Exchange username/password for an access and refresh token. |
+| `POST` | `/api/v1/auth/refresh` | Refresh token in JSON | Rotate both tokens. |
+| `POST` | `/api/v1/auth/revoke` | Bearer | Revoke the active session. |
+| `GET` | `/api/v1/users` | Administrator bearer | List users without password material. |
+| `POST` | `/api/v1/users` | Administrator bearer | Create a user. |
+| `PUT` | `/api/v1/users/{username}` | Administrator bearer | Replace password and optionally role/enabled state. |
+
+The built-in administrator username is `master`. Every account has exactly
+one in-memory session: a successful login or refresh creates a new token pair
+and invalidates the old pair. Only SHA-256 token digests are retained. Access
+tokens expire after 15 minutes, refresh tokens after seven days, and all
+sessions disappear on reset. Updating a user also revokes that user's active
+session.
+
+All request bodies are JSON and all responses, including errors, are JSON.
+Passwords must contain 12 through 128 bytes. Usernames may contain at most 24
+bytes. Requests are deliberately bounded to protect MCU memory.
+
+For interactive testing, import
+`test/postman/STM32_F407_Health_Check_API.postman_collection.json` into
+Postman. Set the collection's secret `masterPassword` and `testPassword`
+variables locally, adjust `baseUrl` to the DHCP address if necessary, and
+trust the generated certificate. The collection captures rotated access and
+refresh tokens automatically.
 
 ## Temperature sensor
 

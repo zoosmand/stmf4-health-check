@@ -49,6 +49,7 @@
 #define LWIP_SO_RCVTIMEO             1
 #define LWIP_SO_SNDTIMEO             1
 #define DEFAULT_TCP_RECVMBOX_SIZE    8U
+#define DEFAULT_ACCEPTMBOX_SIZE      4U
 #define LWIP_STATS                   0
 
 #define MEM_ALIGNMENT                4

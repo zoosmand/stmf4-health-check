@@ -21,15 +21,17 @@
 #include "rtos.h"
 
 #include "FreeRTOS.h"
+#include "api_service.h"
 #include "health_check_service.h"
 #include "lwip.h"
 #include "main.h"
 #include "task.h"
 #include "temperature_service.h"
 #include "time_service.h"
+#include "tls_platform.h"
 
 #define DEFAULT_TASK_STACK_DEPTH 128U
-#define NETWORK_TASK_STACK_DEPTH 256U
+#define NETWORK_TASK_STACK_DEPTH 1024U
 #define DEFAULT_TASK_PERIOD_MS   1000U
 #define NETWORK_TASK_PERIOD_MS   1U
 
@@ -52,13 +54,20 @@ static void rtos_DefaultTask(void* argument);
 static void rtos_NetworkTask(void* argument);
 
 Rtos_StatusTypeDef Rtos_Init(void) {
+  printf("RTOS init: API task.\r\n");
+  if (ApiService_Init() != HAL_OK)
+    return RTOS_STATUS_TASK_ERROR;
+  printf("RTOS init: temperature task.\r\n");
   if (TemperatureService_Init() != SUCCESS)
     return RTOS_STATUS_TASK_ERROR;
+  printf("RTOS init: time task.\r\n");
   if (TimeService_Init() != SUCCESS)
     return RTOS_STATUS_TASK_ERROR;
+  printf("RTOS init: health-check task.\r\n");
   if (HealthCheckService_Init() != SUCCESS)
     return RTOS_STATUS_TASK_ERROR;
 
+  printf("RTOS init: default task.\r\n");
   TaskHandle_t taskHandle = xTaskCreateStatic(
     rtos_DefaultTask,
     "default",
@@ -71,6 +80,7 @@ Rtos_StatusTypeDef Rtos_Init(void) {
   if (taskHandle == NULL)
     return RTOS_STATUS_TASK_ERROR;
 
+  printf("RTOS init: network task.\r\n");
   taskHandle = xTaskCreateStatic(
     rtos_NetworkTask,
     "network",
@@ -89,6 +99,7 @@ Rtos_StatusTypeDef Rtos_Init(void) {
 static void rtos_DefaultTask(void* argument) {
   (void)argument;
 
+  printf("Default task: started.\r\n");
   watchdog.Instance = IWDG;
   watchdog.Init.Prescaler = IWDG_PRESCALER_256;
   watchdog.Init.Reload = 4095U;
@@ -105,6 +116,10 @@ static void rtos_DefaultTask(void* argument) {
 static void rtos_NetworkTask(void* argument) {
   (void)argument;
 
+  printf("Network task: started.\r\n");
+  if (TlsPlatform_Init() != HAL_OK)
+    Error_Handler();
+  printf("Network task: TLS platform ready.\r\n");
   if (Lwip_Init() != LWIP_STATUS_OK)
     Error_Handler();
 
@@ -119,6 +134,9 @@ void vApplicationStackOverflowHook(
   char* taskName
 ) {
   (void)taskHandle;
-  (void)taskName;
+  printf(
+    "FreeRTOS stack overflow: %s\r\n",
+    taskName != NULL ? taskName : "unknown"
+  );
   Error_Handler();
 }

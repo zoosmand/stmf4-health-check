@@ -22,7 +22,7 @@ TARGET = F407_health_check
 # debug build?
 DEBUG = 1
 # optimization
-OPT = -Og
+OPT = -O2
 
 
 #######################################
@@ -48,6 +48,9 @@ Core/Src/delay.c \
 Core/Src/stm32f4xx_it.c \
 Core/Src/stm32f4xx_hal_msp.c \
 Srv/Src/rtos.c \
+Srv/Src/api_service.c \
+Srv/Src/auth_service.c \
+Srv/Src/user_store.c \
 Srv/Src/health_check_service.c \
 Srv/Src/temperature_service.c \
 Srv/Src/time_service.c \
@@ -58,6 +61,7 @@ Periph/Src/onewire.c \
 Periph/Src/ds18b20.c \
 Periph/Src/rs485.c \
 Periph/Src/rtc.c \
+Periph/Src/w25q64.c \
 LWIP/App/lwip.c \
 LWIP/Target/ethernetif.c \
 LWIP/Target/sys_arch.c \
@@ -185,6 +189,7 @@ C_INCLUDES =  \
 -ILWIP/App \
 -ILWIP/Target \
 -ITLS/Inc \
+-ITLS/Private \
 -ICore/Inc \
 -IPeriph/Inc \
 -ISrv/Inc \

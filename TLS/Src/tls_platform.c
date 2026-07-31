@@ -20,12 +20,14 @@
 
 #include "tls_platform.h"
 
+#include "FreeRTOS.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/memory_buffer_alloc.h"
 #include "mbedtls/platform.h"
 #include "mbedtls/platform_time.h"
 #include "psa/crypto.h"
 #include "rtc.h"
+#include "semphr.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -35,6 +37,15 @@
 static RNG_HandleTypeDef randomGenerator;
 static uint8_t tlsHeap[TLS_PLATFORM_HEAP_SIZE]
   __attribute__((section(".ccmram"), aligned(8)));
+static StaticSemaphore_t cryptoMutexControlBlock;
+static SemaphoreHandle_t cryptoMutex;
+
+int mbedtls_hardware_poll(
+  void* data,
+  unsigned char* output,
+  size_t length,
+  size_t* outputLength
+);
 
 static mbedtls_time_t tlsPlatform_GetTime(mbedtls_time_t* currentTime) {
   uint32_t unixTime = 0U;
@@ -49,6 +60,12 @@ static mbedtls_time_t tlsPlatform_GetTime(mbedtls_time_t* currentTime) {
 }
 
 HAL_StatusTypeDef TlsPlatform_Init(void) {
+  cryptoMutex = xSemaphoreCreateRecursiveMutexStatic(
+    &cryptoMutexControlBlock
+  );
+  if (cryptoMutex == NULL)
+    return HAL_ERROR;
+
   randomGenerator.Instance = RNG;
   if (HAL_RNG_Init(&randomGenerator) != HAL_OK)
     return HAL_ERROR;
@@ -68,6 +85,34 @@ HAL_StatusTypeDef TlsPlatform_Init(void) {
   if (psa_crypto_init() != PSA_SUCCESS)
     return HAL_ERROR;
   return HAL_OK;
+}
+
+HAL_StatusTypeDef TlsPlatform_Lock(void) {
+  if (cryptoMutex == NULL)
+    return HAL_ERROR;
+  return (xSemaphoreTakeRecursive(cryptoMutex, portMAX_DELAY) == pdTRUE)
+    ? HAL_OK
+    : HAL_ERROR;
+}
+
+void TlsPlatform_Unlock(void) {
+  if (cryptoMutex != NULL)
+    (void)xSemaphoreGiveRecursive(cryptoMutex);
+}
+
+HAL_StatusTypeDef TlsPlatform_Random(uint8_t* output, size_t length) {
+  if ((output == NULL) && (length != 0U))
+    return HAL_ERROR;
+  if (TlsPlatform_Lock() != HAL_OK)
+    return HAL_ERROR;
+  size_t generated = 0U;
+  HAL_StatusTypeDef status = (mbedtls_hardware_poll(
+    NULL, output, length, &generated
+  ) == 0) && (generated == length)
+    ? HAL_OK
+    : HAL_ERROR;
+  TlsPlatform_Unlock();
+  return status;
 }
 
 int mbedtls_hardware_poll(
