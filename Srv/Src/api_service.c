@@ -40,6 +40,7 @@
 #include "tls_platform.h"
 #include "tls_server_credentials.h"
 #include "tls_transport.h"
+#include "w25q64.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -401,6 +402,50 @@ static int apiService_Dispatch(
   mbedtls_ssl_context* ssl,
   const ApiService_RequestTypeDef* request
 ) {
+  if ((strcmp(request->method, "GET") == 0)
+      && (strcmp(request->path, "/health") == 0)) {
+    uint8_t networkHealthy = Lwip_IsReady();
+    uint8_t rtcHealthy = Rtc_IsSynchronized();
+    uint8_t flashHealthy = W25Q64_IsAvailable();
+    uint8_t temperatureHealthy = 0U;
+    DS18B20_MeasurementTypeDef measurements[ONEWIRE_MAX_DEVICES];
+    size_t measurementCount = TemperatureService_GetMeasurements(
+      measurements, ONEWIRE_MAX_DEVICES
+    );
+    if (measurementCount != 0U) {
+      temperatureHealthy = 1U;
+      for (size_t index = 0U; index < measurementCount; ++index) {
+        if (measurements[index].status != DS18B20_STATUS_OK) {
+          temperatureHealthy = 0U;
+          break;
+        }
+      }
+    }
+
+    uint8_t healthy = (networkHealthy != 0U)
+      && (rtcHealthy != 0U)
+      && (flashHealthy != 0U)
+      && (temperatureHealthy != 0U);
+    char json[192];
+    (void)snprintf(
+      json,
+      sizeof(json),
+      "{\"status\":\"%s\",\"systems\":{\"api\":true,"
+      "\"network\":%s,\"rtc\":%s,\"flash\":%s,\"temperature\":%s}}",
+      healthy != 0U ? "ok" : "failed",
+      networkHealthy != 0U ? "true" : "false",
+      rtcHealthy != 0U ? "true" : "false",
+      flashHealthy != 0U ? "true" : "false",
+      temperatureHealthy != 0U ? "true" : "false"
+    );
+    return apiService_Respond(
+      ssl,
+      healthy != 0U ? 200 : 503,
+      healthy != 0U ? "OK" : "Service Unavailable",
+      json
+    );
+  }
+
   if ((strcmp(request->method, "POST") == 0)
       && (strcmp(request->path, "/api/v1/auth/token") == 0)) {
     char username[USER_STORE_USERNAME_SIZE];
@@ -828,8 +873,6 @@ static int apiService_Dispatch(
 
   if ((strcmp(request->method, "GET") == 0)
       && (strcmp(request->path, "/api/v1/health-check/logs") == 0)) {
-    if (principal.role != USER_ROLE_ADMINISTRATOR)
-      return apiService_Error(ssl, 403, "Forbidden", "forbidden");
     HealthCheckLog_EntryTypeDef entries[HEALTH_CHECK_LOG_MAX_RESULTS];
     size_t count = HealthCheckLog_GetRecent(
       entries, HEALTH_CHECK_LOG_MAX_RESULTS

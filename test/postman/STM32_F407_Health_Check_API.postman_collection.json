@@ -19,6 +19,19 @@
   ],
   "item": [
     {
+      "name": "Get device health",
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test(\"Device is operational\", () => pm.response.to.have.status(200));",
+        "const body = pm.response.json();",
+        "pm.expect(body.status).to.eql(\"ok\");",
+        "pm.expect(body.systems).to.include({api: true, network: true, rtc: true, flash: true, temperature: true});"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/health"
+      }
+    },
+    {
       "name": "Request token",
       "event": [{"listen": "test", "script": {"exec": [
         "pm.test(\"Login succeeded\", () => pm.response.to.have.status(200));",

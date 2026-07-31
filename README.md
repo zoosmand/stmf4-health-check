@@ -242,6 +242,7 @@ development.
 
 | Method | Endpoint | Authorization | Purpose |
 |--------|----------|---------------|---------|
+| `GET` | `/health` | None | Report whether the device's essential subsystems are operational. |
 | `POST` | `/api/v1/auth/token` | None | Exchange a username and password for access and refresh tokens. |
 | `POST` | `/api/v1/auth/refresh` | Refresh token in JSON | Rotate both tokens. |
 | `POST` | `/api/v1/auth/revoke` | Bearer | Revoke the active session. |
@@ -256,12 +257,20 @@ development.
 | `POST` | `/api/v1/health-check/resources` | Administrator bearer | Add a resource; up to three slots are available. |
 | `PUT` | `/api/v1/health-check/resources/{index}` | Administrator bearer | Update a resource; omitted fields retain their values. |
 | `DELETE` | `/api/v1/health-check/resources/{index}` | Administrator bearer | Clear a resource slot; a later resource may reuse its index. |
-| `GET` | `/api/v1/health-check/logs` | Administrator bearer | Return the ten newest completed checks. |
+| `GET` | `/api/v1/health-check/logs` | Any authenticated bearer | Return the ten newest completed checks. |
 | `GET` | `/api/v1/temperature` | Any authenticated bearer | Return the latest DS18B20 readings. |
 | `GET` | `/api/v1/rtc` | Any authenticated bearer | Return UTC time and synchronization state. |
 
 Passwords must contain 12 through 128 bytes, usernames may contain at most 24
 bytes, and all requests are deliberately bounded to protect MCU memory.
+
+`GET /health` is intended for an external availability monitor. It returns
+HTTP `200` with `status: "ok"` when the API, network, synchronized RTC, NOR
+Flash, and current DS18B20 measurements are operational. It returns HTTP `503`
+with `status: "failed"` when any of those checks fails. The `systems` object in
+the JSON response identifies the failing subsystem. This self-check does not
+include the health of configured remote resources; their results are available
+through the health-check log.
 
 ### Updating the server certificate and key
 

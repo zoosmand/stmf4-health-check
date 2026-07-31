@@ -21,6 +21,13 @@
 #define W25Q64_PAGE_SIZE       256U
 
 HAL_StatusTypeDef W25Q64_Init(void);
+
+/**
+  * @brief Verify that the expected NOR Flash still responds on SPI2.
+  * @retval (uint8_t) Nonzero when the JEDEC identity matches the W25Q64JV.
+  */
+uint8_t W25Q64_IsAvailable(void);
+
 HAL_StatusTypeDef W25Q64_Read(uint32_t address, void* data, size_t length);
 HAL_StatusTypeDef W25Q64_EraseSector(uint32_t address);
 HAL_StatusTypeDef W25Q64_Program(

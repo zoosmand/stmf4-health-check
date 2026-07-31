@@ -83,15 +83,26 @@ HAL_StatusTypeDef W25Q64_Init(void) {
   flashMutex = xSemaphoreCreateMutexStatic(&flashMutexControlBlock);
   if (flashMutex == NULL)
     return HAL_ERROR;
+  return W25Q64_IsAvailable() != 0U ? HAL_OK : HAL_ERROR;
+}
+
+uint8_t W25Q64_IsAvailable(void) {
+  if ((flashMutex == NULL)
+      || (xSemaphoreTake(flashMutex, portMAX_DELAY) != pdTRUE)) {
+    return 0U;
+  }
   const uint8_t command = W25Q64_COMMAND_JEDEC_ID;
   uint8_t identity[3];
-  if (w25q64_Command(&command, 1U, identity, sizeof(identity)) != HAL_OK)
-    return HAL_ERROR;
-  return ((identity[0] == 0xEFU)
+  HAL_StatusTypeDef status = w25q64_Command(
+    &command, 1U, identity, sizeof(identity)
+  );
+  (void)xSemaphoreGive(flashMutex);
+  return ((status == HAL_OK)
+      && (identity[0] == 0xEFU)
       && (identity[1] == 0x40U)
       && (identity[2] == 0x17U))
-    ? HAL_OK
-    : HAL_ERROR;
+    ? 1U
+    : 0U;
 }
 
 HAL_StatusTypeDef W25Q64_Read(uint32_t address, void* data, size_t length) {
