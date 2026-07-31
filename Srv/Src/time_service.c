@@ -32,8 +32,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#define TIME_TASK_STACK_DEPTH       256U
+#define TIME_TASK_STACK_DEPTH       512U
 #define TIME_TASK_PERIOD_MS         1000U
+#define TIME_WAIT_REPORT_SECONDS    5U
 #define TIME_NTP_RETRY_SECONDS      60U
 #define TIME_NTP_RESYNC_SECONDS     3600U
 #define TIME_NTP_TIMEOUT_SECONDS    10U
@@ -94,7 +95,7 @@ static void timeService_Task(void* argument) {
   uint32_t retrySeconds = 0U;
   uint32_t reportSeconds = TIME_REPORT_SECONDS;
   uint32_t requestSeconds = 0U;
-  uint8_t waitingReported = 0U;
+  uint32_t waitingReportSeconds = 0U;
 
   if (Rtc_IsSynchronized())
     printf("RTC: retained synchronized UTC time.\r\n");
@@ -103,12 +104,17 @@ static void timeService_Task(void* argument) {
 
   for (;;) {
     if (!Lwip_IsReady()) {
-      if (!waitingReported) {
-        printf("NTP: waiting for network.\r\n");
-        waitingReported = 1U;
+      if (waitingReportSeconds == 0U) {
+        printf(
+          "NTP: waiting for network (link=%u, address=%u).\r\n",
+          netif_is_link_up(&gnetif) ? 1U : 0U,
+          ip4_addr_isany_val(*netif_ip4_addr(&gnetif)) ? 0U : 1U
+        );
+        waitingReportSeconds = TIME_WAIT_REPORT_SECONDS;
       }
+      --waitingReportSeconds;
     } else {
-      waitingReported = 0U;
+      waitingReportSeconds = 0U;
 
       if ((syncState == TIME_SYNC_RECEIVED) && (receivedUnixTime != 0U)) {
         uint32_t unixTime = receivedUnixTime;

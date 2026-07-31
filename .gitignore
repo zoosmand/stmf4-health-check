@@ -61,6 +61,9 @@ dkms.conf
 build/
 build*/
 
+# Locally provisioned TLS server credentials
+TLS/Private/
+
 # Vendir Sources
 Drivers/
 Middlewares/

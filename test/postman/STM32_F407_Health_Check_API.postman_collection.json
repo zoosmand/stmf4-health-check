@@ -1,0 +1,95 @@
+{
+  "info": {
+    "_postman_id": "a7ed9183-c25b-4ec7-8fc4-df47ca130010",
+    "name": "STM32 F407 Health Check API",
+    "description": "Authorization and user-management tests. Set secret password variables locally.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "baseUrl", "value": "https://192.168.0.50"},
+    {"key": "masterUsername", "value": "master"},
+    {"key": "masterPassword", "value": "", "type": "secret"},
+    {"key": "accessToken", "value": "", "type": "secret"},
+    {"key": "refreshToken", "value": "", "type": "secret"},
+    {"key": "testUsername", "value": "operator"},
+    {"key": "testPassword", "value": "", "type": "secret"}
+  ],
+  "item": [
+    {
+      "name": "Request token",
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test(\"Login succeeded\", () => pm.response.to.have.status(200));",
+        "const body = pm.response.json();",
+        "pm.expect(body.token_type).to.eql(\"Bearer\");",
+        "pm.collectionVariables.set(\"accessToken\", body.access_token);",
+        "pm.collectionVariables.set(\"refreshToken\", body.refresh_token);"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\n  \"username\": \"{{masterUsername}}\",\n  \"password\": \"{{masterPassword}}\"\n}"},
+        "url": "{{baseUrl}}/api/v1/auth/token"
+      }
+    },
+    {
+      "name": "Refresh token",
+      "event": [{"listen": "test", "script": {"exec": [
+        "const oldAccess = pm.collectionVariables.get(\"accessToken\");",
+        "const oldRefresh = pm.collectionVariables.get(\"refreshToken\");",
+        "pm.test(\"Refresh succeeded\", () => pm.response.to.have.status(200));",
+        "const body = pm.response.json();",
+        "pm.expect(body.access_token).to.not.eql(oldAccess);",
+        "pm.expect(body.refresh_token).to.not.eql(oldRefresh);",
+        "pm.collectionVariables.set(\"accessToken\", body.access_token);",
+        "pm.collectionVariables.set(\"refreshToken\", body.refresh_token);"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}"},
+        "url": "{{baseUrl}}/api/v1/auth/refresh"
+      }
+    },
+    {
+      "name": "List users",
+      "request": {
+        "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/users"
+      }
+    },
+    {
+      "name": "Create user",
+      "request": {
+        "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\n  \"username\": \"{{testUsername}}\",\n  \"password\": \"{{testPassword}}\",\n  \"role\": \"user\"\n}"},
+        "url": "{{baseUrl}}/api/v1/users"
+      }
+    },
+    {
+      "name": "Update user",
+      "request": {
+        "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},
+        "method": "PUT",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\n  \"password\": \"{{testPassword}}\",\n  \"enabled\": true\n}"},
+        "url": "{{baseUrl}}/api/v1/users/{{testUsername}}"
+      }
+    },
+    {
+      "name": "Revoke token",
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test(\"Session revoked\", () => pm.response.to.have.status(200));",
+        "pm.collectionVariables.unset(\"accessToken\");",
+        "pm.collectionVariables.unset(\"refreshToken\");"
+      ]}}],
+      "request": {
+        "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},
+        "method": "POST",
+        "url": "{{baseUrl}}/api/v1/auth/revoke"
+      }
+    }
+  ]
+}

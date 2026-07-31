@@ -26,7 +26,6 @@
 #include "rs485.h"
 #include "rtos.h"
 #include "task.h"
-#include "tls_platform.h"
 
 #include <stdio.h>
 
@@ -48,8 +47,6 @@ int main(void) {
   peripheral_CrcInit();
   if (Rtc_Init() != HAL_OK)
     Error_Handler();
-  if (TlsPlatform_Init() != HAL_OK)
-    Error_Handler();
   peripheral_Spi2Init();
   if (Rs485_Init() != HAL_OK)
     Error_Handler();
@@ -60,10 +57,12 @@ int main(void) {
    * Allow it to stabilize before the MAC and LwIP initialize the interface.
    */
   HAL_Delay(ETHERNET_PHY_STARTUP_DELAY_MS);
+  printf("Startup: PHY delay complete.\r\n");
 
   if (Rtos_Init() != RTOS_STATUS_OK)
     Error_Handler();
 
+  printf("Startup: RTOS objects ready.\r\n");
   vTaskStartScheduler();
   Error_Handler();
 }
