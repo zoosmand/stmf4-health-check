@@ -33,6 +33,7 @@ Project documentation:
 - Runtime management-server certificate and private-key replacement
 - W25Q64JV NOR Flash interface on SPI2
 - DS18B20 support for up to six sensors on the dedicated one-wire connector
+- Passive-buzzer alerts for failed resource checks
 - Diagnostic `printf()` output through the onboard RS485 interface
 - Device-specific locally administered MAC address derived from the STM32 UID
 
@@ -424,6 +425,22 @@ to six DS18B20 sensors, validates ROM and scratchpad CRC values, and supports
 external or parasitic power. The service converts sensors sequentially every
 seven seconds and rescans the bus once per minute.
 
+## Buzzer alert
+
+A passive buzzer is driven by hardware PWM on `PA8` (`TIM1_CH1`), exposed at
+`P5.4`, through a 2N2222 transistor. Connect `P5.4 / PA8` to the transistor
+base through a 1–4.7 kOhm
+resistor, connect the emitter to ground, and place the buzzer between its
+supply and the collector. The MCU and buzzer supply must share ground. Add a
+flyback diode only when the sounder is magnetic rather than piezoelectric.
+
+The service emits one short startup tone to confirm the wiring. Every failed
+resource check schedules three alert tones; successful checks remain silent.
+Hardware PWM generates the tone, while a statically allocated FreeRTOS task
+handles the pattern timing without blocking TLS, networking, sensors, or the
+watchdog. Concurrent requests are coalesced rather than accumulated in an
+unbounded queue.
+
 ## RS485 diagnostic output
 
 `printf()` is temporarily routed to the onboard RS485 interface. Connect the
@@ -442,7 +459,7 @@ interface is transmit-only and intended for development diagnostics.
 
 The STM32F407VET6 provides 512 KiB internal Flash, 128 KiB ordinary SRAM, and
 64 KiB CPU-only CCM RAM. The current build uses approximately 327 KiB of
-Flash, 112 KiB of ordinary static SRAM, and 62 KiB of CCM RAM. CCM contains
+Flash, 113 KiB of ordinary static SRAM, and 62 KiB of CCM RAM. CCM contains
 the Mbed TLS allocation arena; the temporary trust-store transaction snapshot
 remains in ordinary SRAM so certificate validation can use the largest
 practical contiguous TLS arena.

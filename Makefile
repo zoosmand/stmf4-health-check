@@ -50,6 +50,7 @@ Core/Src/stm32f4xx_hal_msp.c \
 Srv/Src/rtos.c \
 Srv/Src/api_service.c \
 Srv/Src/auth_service.c \
+Srv/Src/buzzer_service.c \
 Srv/Src/user_store.c \
 Srv/Src/health_check_config.c \
 Srv/Src/health_check_log.c \
@@ -60,6 +61,7 @@ TLS/Src/tls_platform.c \
 TLS/Src/tls_server_credentials.c \
 TLS/Src/tls_transport.c \
 TLS/Src/tls_trust_store.c \
+Periph/Src/buzzer.c \
 Periph/Src/onewire.c \
 Periph/Src/ds18b20.c \
 Periph/Src/rs485.c \
@@ -86,6 +88,8 @@ Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_exti.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_eth.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_iwdg.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_spi.c \
+Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim.c \
+Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim_ex.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_crc.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rtc.c \

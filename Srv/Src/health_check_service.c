@@ -21,6 +21,7 @@
 #include "health_check_service.h"
 
 #include "FreeRTOS.h"
+#include "buzzer_service.h"
 #include "health_check_config.h"
 #include "health_check_log.h"
 #include "lwip.h"
@@ -73,11 +74,16 @@ static void healthCheckService_CheckResource(
       (unsigned long)result.elapsedMs);
   }
 
-  printf("Resource health: %s\r\n",
-    ((result.status == TLS_TRANSPORT_OK)
+  uint8_t resourceHealthy = ((result.status == TLS_TRANSPORT_OK)
       && (result.httpStatus == HEALTH_CHECK_OK_STATUS))
-      ? "OK"
-      : "FAILED");
+    ? 1U
+    : 0U;
+  printf(
+    "Resource health: %s\r\n", resourceHealthy != 0U ? "OK" : "FAILED"
+  );
+
+  if ((resourceHealthy == 0U) && (BuzzerService_Alert() != SUCCESS))
+    printf("Buzzer alert scheduling failed.\r\n");
 
   (void)HealthCheckLog_Append(index, &result);
 }
