@@ -335,6 +335,15 @@ reboot. Convert a PEM pair to DER:
 python3 tools/convert_credentials_to_der.py
 ```
 
+This creates `TLS/Private/management_server.crt.der` and
+`TLS/Private/management_server.key.der`. Confirm that both files exist before
+uploading them. The endpoints accept raw DER only; uploading the source PEM
+files is rejected.
+
+The bounded credential store accepts one DER certificate up to 1152 bytes and
+one DER private key up to 384 bytes. Certificate chains are not accepted by
+these endpoints.
+
 Upload the raw DER files without JSON wrapping:
 
 ```sh

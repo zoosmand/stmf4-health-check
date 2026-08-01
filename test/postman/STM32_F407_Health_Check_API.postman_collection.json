@@ -284,7 +284,7 @@
         "header": [{"key": "Content-Type", "value": "application/octet-stream"}],
         "body": {"mode": "file", "file": {"src": "{{certificateDerPath}}"}},
         "url": "{{baseUrl}}/api/v1/tls/certificate",
-        "description": "Generate DER files with tools/convert_credentials_to_der.py. Postman may require selecting the file manually in the Body tab."
+        "description": "First run python3 tools/convert_credentials_to_der.py. Confirm TLS/Private/management_server.crt.der exists, then select that DER file manually in Body > Binary if Postman cannot resolve the path variable. PEM and empty bodies are rejected."
       }
     },
     {
@@ -299,7 +299,7 @@
         "header": [{"key": "Content-Type", "value": "application/octet-stream"}],
         "body": {"mode": "file", "file": {"src": "{{privateKeyDerPath}}"}},
         "url": "{{baseUrl}}/api/v1/tls/private-key",
-        "description": "Run after the certificate upload. Postman may require selecting the file manually in the Body tab."
+        "description": "Run after the certificate upload. Select TLS/Private/management_server.key.der manually in Body > Binary if Postman cannot resolve the path variable. PEM and empty bodies are rejected."
       }
     },
     {

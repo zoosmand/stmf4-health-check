@@ -374,7 +374,8 @@ static int apiService_Error(
 static int apiService_TlsCredentialsRespond(
   mbedtls_ssl_context* ssl,
   TlsServerCredentials_StatusTypeDef status,
-  const char* awaiting
+  const char* awaiting,
+  const char* invalidError
 ) {
   switch (status) {
     case TLS_SERVER_CREDENTIALS_STATUS_ACTIVATED:
@@ -392,7 +393,7 @@ static int apiService_TlsCredentialsRespond(
     case TLS_SERVER_CREDENTIALS_STATUS_MISMATCH:
       return apiService_Error(ssl, 409, "Conflict", "key_mismatch");
     case TLS_SERVER_CREDENTIALS_STATUS_INVALID_DATA:
-      return apiService_Error(ssl, 400, "Bad Request", "invalid_certificate");
+      return apiService_Error(ssl, 400, "Bad Request", invalidError);
     default:
       return apiService_Error(ssl, 500, "Internal Server Error", "storage_error");
   }
@@ -725,22 +726,34 @@ static int apiService_Dispatch(
       && (strcmp(request->path, "/api/v1/tls/certificate") == 0)) {
     if (principal.role != USER_ROLE_ADMINISTRATOR)
       return apiService_Error(ssl, 403, "Forbidden", "forbidden");
+    if (request->bodyLength == 0U)
+      return apiService_Error(
+        ssl, 400, "Bad Request", "invalid_certificate_body"
+      );
     TlsServerCredentials_StatusTypeDef status =
       TlsServerCredentials_StageCertificate(
         (const uint8_t*)request->body, request->bodyLength
       );
-    return apiService_TlsCredentialsRespond(ssl, status, "private_key");
+    return apiService_TlsCredentialsRespond(
+      ssl, status, "private_key", "invalid_certificate"
+    );
   }
 
   if ((strcmp(request->method, "PUT") == 0)
       && (strcmp(request->path, "/api/v1/tls/private-key") == 0)) {
     if (principal.role != USER_ROLE_ADMINISTRATOR)
       return apiService_Error(ssl, 403, "Forbidden", "forbidden");
+    if (request->bodyLength == 0U)
+      return apiService_Error(
+        ssl, 400, "Bad Request", "invalid_private_key_body"
+      );
     TlsServerCredentials_StatusTypeDef status =
       TlsServerCredentials_StagePrivateKey(
         (const uint8_t*)request->body, request->bodyLength
       );
-    return apiService_TlsCredentialsRespond(ssl, status, "certificate");
+    return apiService_TlsCredentialsRespond(
+      ssl, status, "certificate", "invalid_private_key"
+    );
   }
 
   if ((strcmp(request->method, "GET") == 0)
