@@ -22,6 +22,7 @@
 
 #include "FreeRTOS.h"
 #include "api_service.h"
+#include "buzzer_service.h"
 #include "health_check_config.h"
 #include "health_check_log.h"
 #include "health_check_service.h"
@@ -105,7 +106,8 @@ static void rtos_StartupTask(void* argument) {
     Error_Handler();
   }
 
-  if ((ApiService_Init() != HAL_OK)
+  if ((BuzzerService_Init() != SUCCESS)
+      || (ApiService_Init() != HAL_OK)
       || (TemperatureService_Init() != SUCCESS)
       || (TimeService_Init() != SUCCESS)
       || (HealthCheckService_Init() != SUCCESS)) {

@@ -94,6 +94,31 @@ void HAL_SPI_MspDeInit(SPI_HandleTypeDef* spi) {
   HAL_GPIO_DeInit(GPIOC, GPIO_PIN_2 | GPIO_PIN_3);
 }
 
+void HAL_TIM_PWM_MspInit(TIM_HandleTypeDef* timer) {
+  if ((timer == NULL) || (timer->Instance != TIM1))
+    return;
+
+  __HAL_RCC_TIM1_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+
+  GPIO_InitTypeDef gpio = {
+    .Pin = GPIO_PIN_8,
+    .Mode = GPIO_MODE_AF_PP,
+    .Pull = GPIO_PULLDOWN,
+    .Speed = GPIO_SPEED_FREQ_LOW,
+    .Alternate = GPIO_AF1_TIM1,
+  };
+  HAL_GPIO_Init(GPIOA, &gpio);
+}
+
+void HAL_TIM_PWM_MspDeInit(TIM_HandleTypeDef* timer) {
+  if ((timer == NULL) || (timer->Instance != TIM1))
+    return;
+
+  __HAL_RCC_TIM1_CLK_DISABLE();
+  HAL_GPIO_DeInit(GPIOA, GPIO_PIN_8);
+}
+
 void HAL_UART_MspInit(UART_HandleTypeDef* uart) {
   if ((uart == NULL) || (uart->Instance != USART2))
     return;
