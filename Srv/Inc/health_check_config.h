@@ -43,6 +43,7 @@ typedef enum {
   * @brief One configured HTTPS resource to periodically check.
   * @param occupied (uint8_t) Nonzero when this fixed slot holds a resource.
   * @param enabled (uint8_t) Nonzero when the resource is actively checked.
+  * @param trustAnchorId (uint8_t) TLS trust-anchor ID selected for this host.
   * @param port (uint16_t) TCP port, typically 443.
   * @param host (char[HEALTH_CHECK_CONFIG_HOST_SIZE]) Null-terminated hostname.
   * @param path (char[HEALTH_CHECK_CONFIG_PATH_SIZE]) Null-terminated request
@@ -51,6 +52,8 @@ typedef enum {
 typedef struct {
   uint8_t occupied;
   uint8_t enabled;
+  uint8_t trustAnchorId;
+  uint8_t reserved;
   uint16_t port;
   char host[HEALTH_CHECK_CONFIG_HOST_SIZE];
   char path[HEALTH_CHECK_CONFIG_PATH_SIZE];
@@ -89,6 +92,7 @@ void HealthCheckConfig_GetResources(
   * @param port (uint16_t) TCP port.
   * @param path (const char*) Non-null request path.
   * @param enabled (uint8_t) Initial enabled state.
+  * @param trustAnchorId (uint8_t) Existing TLS trust-anchor ID.
   * @param assignedIndex (uint8_t*) Optional; receives the occupied slot index.
   * @retval (HealthCheckConfig_StatusTypeDef) OK on success, FULL when every
   *         slot is occupied.
@@ -98,12 +102,18 @@ HealthCheckConfig_StatusTypeDef HealthCheckConfig_AddResource(
   uint16_t port,
   const char* path,
   uint8_t enabled,
+  uint8_t trustAnchorId,
   uint8_t* assignedIndex
 );
 
 /**
   * @brief Replace an occupied resource slot's fields.
   * @param index (uint8_t) Slot index, 0 through HEALTH_CHECK_CONFIG_MAX_RESOURCES-1.
+  * @param host (const char*) Non-null, non-empty hostname.
+  * @param port (uint16_t) TCP port.
+  * @param path (const char*) Non-null request path beginning with '/'.
+  * @param enabled (uint8_t) New enabled state.
+  * @param trustAnchorId (uint8_t) Existing TLS trust-anchor ID.
   * @retval (HealthCheckConfig_StatusTypeDef) OK on success, NOT_FOUND when the
   *         slot is not occupied.
   */
@@ -112,12 +122,12 @@ HealthCheckConfig_StatusTypeDef HealthCheckConfig_UpdateResource(
   const char* host,
   uint16_t port,
   const char* path,
-  uint8_t enabled
+  uint8_t enabled,
+  uint8_t trustAnchorId
 );
 
 /**
-  * @brief Clear a resource slot. The slot index is never reassigned to
-  *        another resource's identity; it simply becomes unoccupied.
+  * @brief Clear a resource slot. A later resource may reuse the slot index.
   * @param index (uint8_t) Slot index to clear.
   * @retval (HealthCheckConfig_StatusTypeDef) OK on success, NOT_FOUND when the
   *         slot was not occupied.
@@ -125,5 +135,18 @@ HealthCheckConfig_StatusTypeDef HealthCheckConfig_UpdateResource(
 HealthCheckConfig_StatusTypeDef HealthCheckConfig_DeleteResource(
   uint8_t index
 );
+
+/**
+  * @brief Report whether an occupied resource references a trust anchor.
+  * @param trustAnchorId (uint8_t) Anchor ID to find.
+  * @retval (uint8_t) Nonzero when at least one resource uses the ID.
+  */
+uint8_t HealthCheckConfig_IsTrustAnchorInUse(uint8_t trustAnchorId);
+
+/**
+  * @brief Reassign every resource to factory trust anchor ID 0.
+  * @retval (HealthCheckConfig_StatusTypeDef) Persistence result.
+  */
+HealthCheckConfig_StatusTypeDef HealthCheckConfig_ResetTrustAnchors(void);
 
 #endif /* HEALTH_CHECK_CONFIG_H */

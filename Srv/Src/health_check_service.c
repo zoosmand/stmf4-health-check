@@ -51,7 +51,13 @@ static void healthCheckService_CheckResource(
     "HTTPS check: https://%s%s\r\n", resource->host, resource->path
   );
   TlsTransport_ResultTypeDef result;
-  TlsTransport_Head(resource->host, resource->port, resource->path, &result);
+  TlsTransport_Head(
+    resource->host,
+    resource->port,
+    resource->path,
+    resource->trustAnchorId,
+    &result
+  );
 
   if (result.status == TLS_TRANSPORT_OK) {
     printf("TLS: %s, %s, certificate valid\r\n",

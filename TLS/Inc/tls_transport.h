@@ -43,10 +43,20 @@ typedef struct {
   const char* cipherSuite;
 } TlsTransport_ResultTypeDef;
 
+/**
+  * @brief Perform one authenticated TLS 1.3 HTTP HEAD request.
+  * @param host (const char*) DNS hostname used for connection and validation.
+  * @param port (uint16_t) TCP destination port.
+  * @param resource (const char*) HTTP request path.
+  * @param trustAnchorId (uint8_t) Factory or persistent CA anchor ID.
+  * @param result (TlsTransport_ResultTypeDef*) Detailed bounded result.
+  * @retval (TlsTransport_StatusTypeDef) Final transport stage.
+  */
 TlsTransport_StatusTypeDef TlsTransport_Head(
   const char* host,
   uint16_t port,
   const char* resource,
+  uint8_t trustAnchorId,
   TlsTransport_ResultTypeDef* result
 );
 

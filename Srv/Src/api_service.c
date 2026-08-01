@@ -40,6 +40,7 @@
 #include "tls_platform.h"
 #include "tls_server_credentials.h"
 #include "tls_transport.h"
+#include "tls_trust_store.h"
 #include "w25q64.h"
 
 #include <errno.h>
@@ -49,9 +50,9 @@
 
 #define API_SERVICE_PORT              443U
 #define API_SERVICE_TASK_STACK_DEPTH  3072U
-#define API_SERVICE_REQUEST_SIZE      1536U
+#define API_SERVICE_REQUEST_SIZE      2560U
 #define API_SERVICE_RESPONSE_SIZE     2048U
-#define API_SERVICE_BODY_SIZE         768U
+#define API_SERVICE_BODY_SIZE         TLS_TRUST_STORE_MAX_DER_SIZE
 #define API_SERVICE_TIMEOUT_MS        10000U
 
 typedef struct {
@@ -268,6 +269,33 @@ static uint8_t apiService_JsonNumber(
   return 1U;
 }
 
+static uint8_t apiService_AppendJsonString(
+  char* output,
+  size_t capacity,
+  size_t* used,
+  const char* value
+) {
+  if ((output == NULL) || (used == NULL) || (value == NULL)
+      || (*used >= capacity)) {
+    return 0U;
+  }
+  while (*value != '\0') {
+    uint8_t character = (uint8_t)*value++;
+    if (character < 0x20U)
+      return 0U;
+    if ((character == '"') || (character == '\\')) {
+      if ((capacity - *used) <= 2U)
+        return 0U;
+      output[(*used)++] = '\\';
+    } else if ((capacity - *used) <= 1U) {
+      return 0U;
+    }
+    output[(*used)++] = (char)character;
+  }
+  output[*used] = '\0';
+  return 1U;
+}
+
 static void apiService_HexEncode(
   const uint8_t* data,
   size_t length,
@@ -367,6 +395,42 @@ static int apiService_TlsCredentialsRespond(
       return apiService_Error(ssl, 400, "Bad Request", "invalid_certificate");
     default:
       return apiService_Error(ssl, 500, "Internal Server Error", "storage_error");
+  }
+}
+
+static int apiService_TrustStoreError(
+  mbedtls_ssl_context* ssl,
+  TlsTrustStore_StatusTypeDef status
+) {
+  switch (status) {
+    case TLS_TRUST_STORE_STATUS_INVALID_ARGUMENT:
+      return apiService_Error(
+        ssl, 400, "Bad Request", "invalid_certificate_body"
+      );
+    case TLS_TRUST_STORE_STATUS_INVALID_CERTIFICATE:
+      return apiService_Error(
+        ssl, 400, "Bad Request", "invalid_certificate"
+      );
+    case TLS_TRUST_STORE_STATUS_NO_MEMORY:
+      return apiService_Error(
+        ssl, 503, "Service Unavailable", "tls_memory_exhausted"
+      );
+    case TLS_TRUST_STORE_STATUS_NOT_CA:
+      return apiService_Error(ssl, 400, "Bad Request", "certificate_not_ca");
+    case TLS_TRUST_STORE_STATUS_NOT_FOUND:
+      return apiService_Error(ssl, 404, "Not Found", "trust_anchor_not_found");
+    case TLS_TRUST_STORE_STATUS_FULL:
+      return apiService_Error(
+        ssl, 409, "Conflict", "trust_anchor_limit_reached"
+      );
+    case TLS_TRUST_STORE_STATUS_FACTORY_PROTECTED:
+      return apiService_Error(
+        ssl, 403, "Forbidden", "factory_anchor_protected"
+      );
+    default:
+      return apiService_Error(
+        ssl, 500, "Internal Server Error", "storage_error"
+      );
   }
 }
 
@@ -680,6 +744,141 @@ static int apiService_Dispatch(
   }
 
   if ((strcmp(request->method, "GET") == 0)
+      && (strcmp(request->path, "/api/v1/trust-anchors") == 0)) {
+    if (principal.role != USER_ROLE_ADMINISTRATOR)
+      return apiService_Error(ssl, 403, "Forbidden", "forbidden");
+    TlsTrustStore_InfoTypeDef anchors[TLS_TRUST_STORE_MAX_ANCHORS];
+    size_t count = TlsTrustStore_List(
+      anchors, TLS_TRUST_STORE_MAX_ANCHORS
+    );
+    char json[API_SERVICE_RESPONSE_SIZE - 192U];
+    size_t used = (size_t)snprintf(
+      json, sizeof(json), "{\"trust_anchors\":["
+    );
+    for (size_t index = 0U; index < count; ++index) {
+      int written = snprintf(
+        &json[used],
+        sizeof(json) - used,
+        "%s{\"id\":%u,\"factory\":%s,\"der_length\":%u,"
+        "\"subject\":\"",
+        index == 0U ? "" : ",",
+        (unsigned int)anchors[index].id,
+        anchors[index].factory != 0U ? "true" : "false",
+        (unsigned int)anchors[index].derLength
+      );
+      if ((written <= 0) || ((size_t)written >= (sizeof(json) - used)))
+        return apiService_Error(
+          ssl, 500, "Internal Server Error", "response_too_large"
+        );
+      used += (size_t)written;
+      if (apiService_AppendJsonString(
+            json, sizeof(json), &used, anchors[index].subject
+          ) == 0U) {
+        return apiService_Error(
+          ssl, 500, "Internal Server Error", "response_too_large"
+        );
+      }
+      written = snprintf(&json[used], sizeof(json) - used, "\"}");
+      if ((written <= 0) || ((size_t)written >= (sizeof(json) - used)))
+        return apiService_Error(
+          ssl, 500, "Internal Server Error", "response_too_large"
+        );
+      used += (size_t)written;
+    }
+    (void)snprintf(&json[used], sizeof(json) - used, "]}");
+    return apiService_Respond(ssl, 200, "OK", json);
+  }
+
+  if ((strcmp(request->method, "POST") == 0)
+      && (strcmp(request->path, "/api/v1/trust-anchors") == 0)) {
+    if (principal.role != USER_ROLE_ADMINISTRATOR)
+      return apiService_Error(ssl, 403, "Forbidden", "forbidden");
+    uint8_t assignedId = 0U;
+    TlsTrustStore_StatusTypeDef status = TlsTrustStore_Add(
+      (const uint8_t*)request->body, request->bodyLength, &assignedId
+    );
+    if (status != TLS_TRUST_STORE_STATUS_OK)
+      return apiService_TrustStoreError(ssl, status);
+    char json[48];
+    (void)snprintf(
+      json, sizeof(json), "{\"id\":%u}", (unsigned int)assignedId
+    );
+    return apiService_Respond(ssl, 201, "Created", json);
+  }
+
+  if ((strcmp(request->method, "DELETE") == 0)
+      && (strcmp(request->path, "/api/v1/trust-anchors") == 0)) {
+    if (principal.role != USER_ROLE_ADMINISTRATOR)
+      return apiService_Error(ssl, 403, "Forbidden", "forbidden");
+    if (HealthCheckConfig_ResetTrustAnchors()
+        != HEALTH_CHECK_CONFIG_STATUS_OK) {
+      return apiService_Error(
+        ssl, 500, "Internal Server Error", "storage_error"
+      );
+    }
+    TlsTrustStore_StatusTypeDef status = TlsTrustStore_Reset();
+    if (status != TLS_TRUST_STORE_STATUS_OK)
+      return apiService_TrustStoreError(ssl, status);
+    return apiService_Respond(
+      ssl, 200, "OK", "{\"factory_restored\":true}"
+    );
+  }
+
+  const char* trustAnchorPrefix = "/api/v1/trust-anchors/";
+  uint8_t replacingTrustAnchor = ((strcmp(request->method, "PUT") == 0)
+      && (strncmp(
+        request->path, trustAnchorPrefix, strlen(trustAnchorPrefix)
+      ) == 0));
+  uint8_t deletingTrustAnchor = ((strcmp(request->method, "DELETE") == 0)
+      && (strncmp(
+        request->path, trustAnchorPrefix, strlen(trustAnchorPrefix)
+      ) == 0));
+  if ((replacingTrustAnchor != 0U) || (deletingTrustAnchor != 0U)) {
+    if (principal.role != USER_ROLE_ADMINISTRATOR)
+      return apiService_Error(ssl, 403, "Forbidden", "forbidden");
+    const char* idText = request->path + strlen(trustAnchorPrefix);
+    char* idEnd;
+    long idValue = strtol(idText, &idEnd, 10);
+    if ((idEnd == idText) || (*idEnd != '\0') || (idValue < 0)
+        || (idValue > TLS_TRUST_STORE_MAX_PERSISTED)) {
+      return apiService_Error(
+        ssl, 404, "Not Found", "trust_anchor_not_found"
+      );
+    }
+    uint8_t id = (uint8_t)idValue;
+    if (deletingTrustAnchor != 0U) {
+      if (id == TLS_TRUST_STORE_FACTORY_ID)
+        return apiService_TrustStoreError(
+          ssl, TLS_TRUST_STORE_STATUS_FACTORY_PROTECTED
+        );
+      if (HealthCheckConfig_IsTrustAnchorInUse(id) != 0U)
+        return apiService_Error(
+          ssl, 409, "Conflict", "trust_anchor_in_use"
+        );
+      TlsTrustStore_StatusTypeDef status = TlsTrustStore_Delete(id);
+      if (status != TLS_TRUST_STORE_STATUS_OK)
+        return apiService_TrustStoreError(ssl, status);
+      char json[48];
+      (void)snprintf(
+        json, sizeof(json), "{\"id\":%u,\"deleted\":true}",
+        (unsigned int)id
+      );
+      return apiService_Respond(ssl, 200, "OK", json);
+    }
+    TlsTrustStore_StatusTypeDef status = TlsTrustStore_Replace(
+      id, (const uint8_t*)request->body, request->bodyLength
+    );
+    if (status != TLS_TRUST_STORE_STATUS_OK)
+      return apiService_TrustStoreError(ssl, status);
+    char json[48];
+    (void)snprintf(
+      json, sizeof(json), "{\"id\":%u,\"replaced\":true}",
+      (unsigned int)id
+    );
+    return apiService_Respond(ssl, 200, "OK", json);
+  }
+
+  if ((strcmp(request->method, "GET") == 0)
       && (strcmp(request->path, "/api/v1/health-check/config") == 0)) {
     if (principal.role != USER_ROLE_ADMINISTRATOR)
       return apiService_Error(ssl, 403, "Forbidden", "forbidden");
@@ -702,13 +901,14 @@ static int apiService_Dispatch(
         &json[used],
         sizeof(json) - used,
         "%s{\"index\":%u,\"host\":\"%s\",\"port\":%u,\"path\":\"%s\","
-        "\"enabled\":%s}",
+        "\"enabled\":%s,\"trust_anchor_id\":%u}",
         first != 0U ? "" : ",",
         (unsigned int)index,
         resources[index].host,
         (unsigned int)resources[index].port,
         resources[index].path,
-        resources[index].enabled != 0U ? "true" : "false"
+        resources[index].enabled != 0U ? "true" : "false",
+        (unsigned int)resources[index].trustAnchorId
       );
       if ((written <= 0) || ((size_t)written >= (sizeof(json) - used)))
         return apiService_Error(
@@ -754,6 +954,7 @@ static int apiService_Dispatch(
     char host[HEALTH_CHECK_CONFIG_HOST_SIZE];
     char path[HEALTH_CHECK_CONFIG_PATH_SIZE];
     uint32_t portValue;
+    uint32_t trustAnchorValue = TLS_TRUST_STORE_FACTORY_ID;
     uint8_t enabled = 1U;
     if ((apiService_JsonString(
           request->body, "host", host, sizeof(host)
@@ -767,11 +968,25 @@ static int apiService_Dispatch(
       return apiService_Error(ssl, 400, "Bad Request", "invalid_request");
     }
     (void)apiService_JsonBoolean(request->body, "enabled", &enabled);
+    (void)apiService_JsonNumber(
+      request->body, "trust_anchor_id", &trustAnchorValue
+    );
     if ((portValue == 0U) || (portValue > 65535U))
       return apiService_Error(ssl, 400, "Bad Request", "invalid_port");
+    if ((trustAnchorValue > TLS_TRUST_STORE_MAX_PERSISTED)
+        || (TlsTrustStore_Exists((uint8_t)trustAnchorValue) == 0U)) {
+      return apiService_Error(
+        ssl, 400, "Bad Request", "invalid_trust_anchor"
+      );
+    }
     uint8_t assignedIndex = 0U;
     HealthCheckConfig_StatusTypeDef status = HealthCheckConfig_AddResource(
-      host, (uint16_t)portValue, path, enabled, &assignedIndex
+      host,
+      (uint16_t)portValue,
+      path,
+      enabled,
+      (uint8_t)trustAnchorValue,
+      &assignedIndex
     );
     if (status == HEALTH_CHECK_CONFIG_STATUS_FULL)
       return apiService_Error(ssl, 409, "Conflict", "resource_limit_reached");
@@ -782,12 +997,13 @@ static int apiService_Dispatch(
       json,
       sizeof(json),
       "{\"index\":%u,\"host\":\"%s\",\"port\":%u,\"path\":\"%s\","
-      "\"enabled\":%s}",
+      "\"enabled\":%s,\"trust_anchor_id\":%u}",
       (unsigned int)assignedIndex,
       host,
       (unsigned int)portValue,
       path,
-      enabled != 0U ? "true" : "false"
+      enabled != 0U ? "true" : "false",
+      (unsigned int)trustAnchorValue
     );
     return apiService_Respond(ssl, 201, "Created", json);
   }
@@ -838,6 +1054,7 @@ static int apiService_Dispatch(
     char host[HEALTH_CHECK_CONFIG_HOST_SIZE];
     char path[HEALTH_CHECK_CONFIG_PATH_SIZE];
     uint32_t portValue = resources[index].port;
+    uint32_t trustAnchorValue = resources[index].trustAnchorId;
     uint8_t enabled = resources[index].enabled;
     (void)strncpy(host, resources[index].host, sizeof(host) - 1U);
     host[sizeof(host) - 1U] = '\0';
@@ -847,10 +1064,24 @@ static int apiService_Dispatch(
     (void)apiService_JsonString(request->body, "path", path, sizeof(path));
     (void)apiService_JsonNumber(request->body, "port", &portValue);
     (void)apiService_JsonBoolean(request->body, "enabled", &enabled);
+    (void)apiService_JsonNumber(
+      request->body, "trust_anchor_id", &trustAnchorValue
+    );
     if ((portValue == 0U) || (portValue > 65535U))
       return apiService_Error(ssl, 400, "Bad Request", "invalid_port");
+    if ((trustAnchorValue > TLS_TRUST_STORE_MAX_PERSISTED)
+        || (TlsTrustStore_Exists((uint8_t)trustAnchorValue) == 0U)) {
+      return apiService_Error(
+        ssl, 400, "Bad Request", "invalid_trust_anchor"
+      );
+    }
     HealthCheckConfig_StatusTypeDef status = HealthCheckConfig_UpdateResource(
-      index, host, (uint16_t)portValue, path, enabled
+      index,
+      host,
+      (uint16_t)portValue,
+      path,
+      enabled,
+      (uint8_t)trustAnchorValue
     );
     if (status == HEALTH_CHECK_CONFIG_STATUS_NOT_FOUND)
       return apiService_Error(ssl, 404, "Not Found", "resource_not_found");
@@ -861,12 +1092,13 @@ static int apiService_Dispatch(
       json,
       sizeof(json),
       "{\"index\":%u,\"host\":\"%s\",\"port\":%u,\"path\":\"%s\","
-      "\"enabled\":%s}",
+      "\"enabled\":%s,\"trust_anchor_id\":%u}",
       (unsigned int)index,
       host,
       (unsigned int)portValue,
       path,
-      enabled != 0U ? "true" : "false"
+      enabled != 0U ? "true" : "false",
+      (unsigned int)trustAnchorValue
     );
     return apiService_Respond(ssl, 200, "OK", json);
   }

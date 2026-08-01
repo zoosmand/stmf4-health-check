@@ -23,12 +23,14 @@
 #include "FreeRTOS.h"
 #include "flash_layout.h"
 #include "semphr.h"
+#include "tls_trust_store.h"
 #include "w25q64.h"
 
 #include <string.h>
 
 #define HEALTH_CHECK_CONFIG_MAGIC     0x48434643UL
-#define HEALTH_CHECK_CONFIG_VERSION   1U
+#define HEALTH_CHECK_CONFIG_VERSION   2U
+#define HEALTH_CHECK_CONFIG_LEGACY_VERSION 1U
 #define HEALTH_CHECK_CONFIG_SECTOR_A  FLASH_LAYOUT_HEALTH_CHECK_CONFIG_SECTOR_A
 #define HEALTH_CHECK_CONFIG_SECTOR_B  FLASH_LAYOUT_HEALTH_CHECK_CONFIG_SECTOR_B
 
@@ -46,6 +48,26 @@ typedef struct {
   HealthCheckConfig_ResourceTypeDef resources[HEALTH_CHECK_CONFIG_MAX_RESOURCES];
   uint32_t crc;
 } HealthCheckConfig_SnapshotTypeDef;
+
+typedef struct {
+  uint8_t occupied;
+  uint8_t enabled;
+  uint16_t port;
+  char host[HEALTH_CHECK_CONFIG_HOST_SIZE];
+  char path[HEALTH_CHECK_CONFIG_PATH_SIZE];
+} HealthCheckConfig_LegacyResourceTypeDef;
+
+typedef struct {
+  uint32_t magic;
+  uint16_t version;
+  uint16_t reserved;
+  uint32_t generation;
+  uint32_t periodSeconds;
+  HealthCheckConfig_LegacyResourceTypeDef resources[
+    HEALTH_CHECK_CONFIG_MAX_RESOURCES
+  ];
+  uint32_t crc;
+} HealthCheckConfig_LegacySnapshotTypeDef;
 
 static HealthCheckConfig_SnapshotTypeDef snapshot;
 static uint32_t activeAddress;
@@ -75,6 +97,45 @@ static uint8_t healthCheckConfig_IsValid(
       )))
     ? 1U
     : 0U;
+}
+
+static uint8_t healthCheckConfig_IsLegacyValid(
+  const HealthCheckConfig_LegacySnapshotTypeDef* candidate
+) {
+  return ((candidate->magic == HEALTH_CHECK_CONFIG_MAGIC)
+      && (candidate->version == HEALTH_CHECK_CONFIG_LEGACY_VERSION)
+      && (candidate->periodSeconds >= HEALTH_CHECK_CONFIG_MIN_PERIOD_SECONDS)
+      && (candidate->periodSeconds <= HEALTH_CHECK_CONFIG_MAX_PERIOD_SECONDS)
+      && (candidate->crc == healthCheckConfig_Crc(
+        candidate, offsetof(HealthCheckConfig_LegacySnapshotTypeDef, crc)
+      )))
+    ? 1U
+    : 0U;
+}
+
+static void healthCheckConfig_MigrateLegacy(
+  const HealthCheckConfig_LegacySnapshotTypeDef* legacy,
+  HealthCheckConfig_SnapshotTypeDef* target
+) {
+  memset(target, 0, sizeof(*target));
+  target->generation = legacy->generation;
+  target->periodSeconds = legacy->periodSeconds;
+  for (uint8_t index = 0U; index < HEALTH_CHECK_CONFIG_MAX_RESOURCES; ++index) {
+    target->resources[index].occupied = legacy->resources[index].occupied;
+    target->resources[index].enabled = legacy->resources[index].enabled;
+    target->resources[index].trustAnchorId = 0U;
+    target->resources[index].port = legacy->resources[index].port;
+    memcpy(
+      target->resources[index].host,
+      legacy->resources[index].host,
+      sizeof(target->resources[index].host)
+    );
+    memcpy(
+      target->resources[index].path,
+      legacy->resources[index].path,
+      sizeof(target->resources[index].path)
+    );
+  }
 }
 
 static void healthCheckConfig_SetDefault(
@@ -147,6 +208,27 @@ HAL_StatusTypeDef HealthCheckConfig_Init(void) {
     activeAddress = HEALTH_CHECK_CONFIG_SECTOR_B;
     return HAL_OK;
   }
+
+  static HealthCheckConfig_LegacySnapshotTypeDef legacyFirst;
+  static HealthCheckConfig_LegacySnapshotTypeDef legacySecond;
+  uint8_t legacyFirstValid = (W25Q64_Read(
+    HEALTH_CHECK_CONFIG_SECTOR_A, &legacyFirst, sizeof(legacyFirst)
+  ) == HAL_OK) && healthCheckConfig_IsLegacyValid(&legacyFirst);
+  uint8_t legacySecondValid = (W25Q64_Read(
+    HEALTH_CHECK_CONFIG_SECTOR_B, &legacySecond, sizeof(legacySecond)
+  ) == HAL_OK) && healthCheckConfig_IsLegacyValid(&legacySecond);
+  if ((legacyFirstValid != 0U) || (legacySecondValid != 0U)) {
+    const HealthCheckConfig_LegacySnapshotTypeDef* legacy =
+      ((legacyFirstValid != 0U) && ((legacySecondValid == 0U)
+        || (legacyFirst.generation >= legacySecond.generation)))
+        ? &legacyFirst
+        : &legacySecond;
+    activeAddress = (legacy == &legacyFirst)
+      ? HEALTH_CHECK_CONFIG_SECTOR_A
+      : HEALTH_CHECK_CONFIG_SECTOR_B;
+    healthCheckConfig_MigrateLegacy(legacy, &snapshot);
+    return healthCheckConfig_Save(&snapshot);
+  }
   healthCheckConfig_SetDefault(&snapshot);
   activeAddress = HEALTH_CHECK_CONFIG_SECTOR_B;
   return healthCheckConfig_Save(&snapshot);
@@ -195,10 +277,12 @@ HealthCheckConfig_StatusTypeDef HealthCheckConfig_AddResource(
   uint16_t port,
   const char* path,
   uint8_t enabled,
+  uint8_t trustAnchorId,
   uint8_t* assignedIndex
 ) {
   if ((host == NULL) || (host[0] == '\0') || (path == NULL)
       || (path[0] != '/') || (port == 0U)
+      || (trustAnchorId > TLS_TRUST_STORE_MAX_PERSISTED)
       || (strlen(host) >= HEALTH_CHECK_CONFIG_HOST_SIZE)
       || (strlen(path) >= HEALTH_CHECK_CONFIG_PATH_SIZE))
     return HEALTH_CHECK_CONFIG_STATUS_INVALID_ARGUMENT;
@@ -217,6 +301,7 @@ HealthCheckConfig_StatusTypeDef HealthCheckConfig_AddResource(
   memset(&candidate.resources[index], 0, sizeof(candidate.resources[index]));
   candidate.resources[index].occupied = 1U;
   candidate.resources[index].enabled = enabled ? 1U : 0U;
+  candidate.resources[index].trustAnchorId = trustAnchorId;
   candidate.resources[index].port = port;
   (void)strncpy(
     candidate.resources[index].host,
@@ -243,11 +328,13 @@ HealthCheckConfig_StatusTypeDef HealthCheckConfig_UpdateResource(
   const char* host,
   uint16_t port,
   const char* path,
-  uint8_t enabled
+  uint8_t enabled,
+  uint8_t trustAnchorId
 ) {
   if ((index >= HEALTH_CHECK_CONFIG_MAX_RESOURCES)
       || (host == NULL) || (host[0] == '\0') || (path == NULL)
       || (path[0] != '/') || (port == 0U)
+      || (trustAnchorId > TLS_TRUST_STORE_MAX_PERSISTED)
       || (strlen(host) >= HEALTH_CHECK_CONFIG_HOST_SIZE)
       || (strlen(path) >= HEALTH_CHECK_CONFIG_PATH_SIZE))
     return HEALTH_CHECK_CONFIG_STATUS_INVALID_ARGUMENT;
@@ -259,6 +346,7 @@ HealthCheckConfig_StatusTypeDef HealthCheckConfig_UpdateResource(
   }
   HealthCheckConfig_SnapshotTypeDef candidate = snapshot;
   candidate.resources[index].enabled = enabled ? 1U : 0U;
+  candidate.resources[index].trustAnchorId = trustAnchorId;
   candidate.resources[index].port = port;
   memset(candidate.resources[index].host, 0, HEALTH_CHECK_CONFIG_HOST_SIZE);
   (void)strncpy(
@@ -293,6 +381,35 @@ HealthCheckConfig_StatusTypeDef HealthCheckConfig_DeleteResource(
   }
   HealthCheckConfig_SnapshotTypeDef candidate = snapshot;
   memset(&candidate.resources[index], 0, sizeof(candidate.resources[index]));
+  HealthCheckConfig_StatusTypeDef status =
+    (healthCheckConfig_Save(&candidate) == HAL_OK)
+      ? HEALTH_CHECK_CONFIG_STATUS_OK
+      : HEALTH_CHECK_CONFIG_STATUS_STORAGE_ERROR;
+  (void)xSemaphoreGive(configMutex);
+  return status;
+}
+
+uint8_t HealthCheckConfig_IsTrustAnchorInUse(uint8_t trustAnchorId) {
+  if (xSemaphoreTake(configMutex, portMAX_DELAY) != pdTRUE)
+    return 0U;
+  uint8_t inUse = 0U;
+  for (uint8_t index = 0U; index < HEALTH_CHECK_CONFIG_MAX_RESOURCES; ++index) {
+    if ((snapshot.resources[index].occupied != 0U)
+        && (snapshot.resources[index].trustAnchorId == trustAnchorId)) {
+      inUse = 1U;
+      break;
+    }
+  }
+  (void)xSemaphoreGive(configMutex);
+  return inUse;
+}
+
+HealthCheckConfig_StatusTypeDef HealthCheckConfig_ResetTrustAnchors(void) {
+  if (xSemaphoreTake(configMutex, portMAX_DELAY) != pdTRUE)
+    return HEALTH_CHECK_CONFIG_STATUS_STORAGE_ERROR;
+  HealthCheckConfig_SnapshotTypeDef candidate = snapshot;
+  for (uint8_t index = 0U; index < HEALTH_CHECK_CONFIG_MAX_RESOURCES; ++index)
+    candidate.resources[index].trustAnchorId = 0U;
   HealthCheckConfig_StatusTypeDef status =
     (healthCheckConfig_Save(&candidate) == HAL_OK)
       ? HEALTH_CHECK_CONFIG_STATUS_OK

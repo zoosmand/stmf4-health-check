@@ -32,7 +32,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define TLS_PLATFORM_HEAP_SIZE (52U * 1024U)
+#define TLS_PLATFORM_HEAP_SIZE (62U * 1024U)
 
 static RNG_HandleTypeDef randomGenerator;
 static uint8_t tlsHeap[TLS_PLATFORM_HEAP_SIZE]
