@@ -33,7 +33,7 @@
 #include <string.h>
 
 #define TLS_SERVER_CREDENTIALS_MAGIC    0x54534352UL
-#define TLS_SERVER_CREDENTIALS_VERSION  1U
+#define TLS_SERVER_CREDENTIALS_VERSION  3U
 #define TLS_SERVER_CREDENTIALS_SECTOR_A \
   FLASH_LAYOUT_TLS_SERVER_CREDENTIALS_SECTOR_A
 #define TLS_SERVER_CREDENTIALS_SECTOR_B \
@@ -51,7 +51,13 @@ typedef struct {
   uint32_t crc;
 } TlsServerCredentials_SnapshotTypeDef;
 
+_Static_assert(
+  sizeof(TlsServerCredentials_SnapshotTypeDef) <= W25Q64_SECTOR_SIZE,
+  "TLS server credentials exceed their Flash bank"
+);
+
 static TlsServerCredentials_SnapshotTypeDef snapshot;
+static TlsServerCredentials_SnapshotTypeDef verification;
 static uint32_t activeAddress;
 static uint8_t hasValidSnapshot;
 
@@ -113,8 +119,6 @@ static HAL_StatusTypeDef tlsServerCredentials_Save(
   if ((W25Q64_EraseSector(target) != HAL_OK)
       || (W25Q64_Program(target, candidate, sizeof(*candidate)) != HAL_OK))
     return HAL_ERROR;
-  /* Static to keep caller stack usage independent of snapshot size. */
-  static TlsServerCredentials_SnapshotTypeDef verification;
   if ((W25Q64_Read(target, &verification, sizeof(verification)) != HAL_OK)
       || (tlsServerCredentials_IsValid(&verification) == 0U)
       || (verification.generation != candidate->generation))
@@ -220,22 +224,20 @@ static TlsServerCredentials_StatusTypeDef tlsServerCredentials_TryActivate(
 }
 
 HAL_StatusTypeDef TlsServerCredentials_Init(void) {
-  /* Static to keep the startup task's stack bounded. */
-  static TlsServerCredentials_SnapshotTypeDef first;
-  static TlsServerCredentials_SnapshotTypeDef second;
+  /* Reuse the persistent working snapshots to keep startup RAM bounded. */
   uint8_t firstValid = (W25Q64_Read(
-    TLS_SERVER_CREDENTIALS_SECTOR_A, &first, sizeof(first)
-  ) == HAL_OK) && tlsServerCredentials_IsValid(&first);
+    TLS_SERVER_CREDENTIALS_SECTOR_A, &snapshot, sizeof(snapshot)
+  ) == HAL_OK) && tlsServerCredentials_IsValid(&snapshot);
   uint8_t secondValid = (W25Q64_Read(
-    TLS_SERVER_CREDENTIALS_SECTOR_B, &second, sizeof(second)
-  ) == HAL_OK) && tlsServerCredentials_IsValid(&second);
+    TLS_SERVER_CREDENTIALS_SECTOR_B, &verification, sizeof(verification)
+  ) == HAL_OK) && tlsServerCredentials_IsValid(&verification);
   if ((firstValid != 0U)
-      && ((secondValid == 0U) || (first.generation >= second.generation))) {
-    snapshot = first;
+      && ((secondValid == 0U)
+        || (snapshot.generation >= verification.generation))) {
     activeAddress = TLS_SERVER_CREDENTIALS_SECTOR_A;
     hasValidSnapshot = 1U;
   } else if (secondValid != 0U) {
-    snapshot = second;
+    snapshot = verification;
     activeAddress = TLS_SERVER_CREDENTIALS_SECTOR_B;
     hasValidSnapshot = 1U;
   } else {

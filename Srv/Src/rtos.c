@@ -32,6 +32,7 @@
 #include "time_service.h"
 #include "tls_platform.h"
 #include "tls_server_credentials.h"
+#include "tls_trust_store.h"
 #include "w25q64.h"
 
 #define DEFAULT_TASK_STACK_DEPTH 128U
@@ -97,7 +98,8 @@ static void rtos_StartupTask(void* argument) {
   if (W25Q64_Init() != HAL_OK)
     Error_Handler();
   printf("W25Q64 flash ready.\r\n");
-  if ((HealthCheckConfig_Init() != HAL_OK)
+  if ((TlsTrustStore_Init() != HAL_OK)
+      || (HealthCheckConfig_Init() != HAL_OK)
       || (HealthCheckLog_Init() != HAL_OK)
       || (TlsServerCredentials_Init() != HAL_OK)) {
     Error_Handler();

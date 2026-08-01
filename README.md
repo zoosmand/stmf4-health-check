@@ -11,6 +11,7 @@ validation, and the HTTP request all succeed with status `200`.
 
 Project documentation:
 
+- [Operational use cases](USECASES.md)
 - [Development rules](docs/DEVELOPMENT_RULES.md)
 - [Naming conventions](docs/NAMING_CONVENTIONS.md)
 - [Supplying ignored source trees in forks](docs/IGNORED_SOURCES.md)
@@ -113,11 +114,12 @@ checked once per configured period, from 60 through 1800 seconds. The default
 period is 60 seconds and a freshly provisioned device contains one resource:
 `https://pgw.intraclear.com/`.
 
-The embedded trust store currently contains the USERTrust RSA Certification
-Authority required by the default target. Every configured resource must
-present a chain anchored by this trust store. Review or replace the trust
-anchor when changing targets or when their certificate chains change. Correct
-RTC time is required for certificate validation.
+Factory anchor ID `0` contains the compiled USERTrust RSA Certification
+Authority required by the default target. Administrators can add as many as
+three DER-encoded root CA certificates to NOR Flash and select one through each
+resource's `trust_anchor_id`. Only the selected anchor is parsed for a check,
+keeping runtime memory bounded. Correct RTC time remains mandatory for
+certificate validation.
 
 TLS obtains entropy from the STM32 hardware random-number generator. Its
 dedicated 52 KiB allocator arena resides in CPU-only CCM RAM, preserving
@@ -193,7 +195,7 @@ an early record was written before RTC synchronization.
 ## Management API
 
 The device serves a bounded JSON API over TLS 1.3 on TCP port 443. Except for
-the two binary credential-upload endpoints, all request and response bodies,
+server-credential and trust-anchor uploads, all request and response bodies,
 including errors, use JSON.
 
 ### Initial server certificate
@@ -252,6 +254,11 @@ development.
 | `DELETE` | `/api/v1/users/{username}` | Administrator bearer | Delete a user and revoke its session. |
 | `PUT` | `/api/v1/tls/certificate` | Administrator bearer | Upload a raw DER server certificate. |
 | `PUT` | `/api/v1/tls/private-key` | Administrator bearer | Upload a raw DER server private key. |
+| `GET` | `/api/v1/trust-anchors` | Administrator bearer | List factory and persistent CA trust anchors. |
+| `POST` | `/api/v1/trust-anchors` | Administrator bearer | Add a raw DER CA certificate to the first free slot. |
+| `PUT` | `/api/v1/trust-anchors/{id}` | Administrator bearer | Replace a persistent CA certificate. |
+| `DELETE` | `/api/v1/trust-anchors/{id}` | Administrator bearer | Delete an unused persistent CA certificate. |
+| `DELETE` | `/api/v1/trust-anchors` | Administrator bearer | Reassign resources to factory ID 0 and clear persistent anchors. |
 | `GET` | `/api/v1/health-check/config` | Administrator bearer | Read the period and configured resources. |
 | `PUT` | `/api/v1/health-check/config` | Administrator bearer | Set the period from 60 through 1800 seconds. |
 | `POST` | `/api/v1/health-check/resources` | Administrator bearer | Add a resource; up to three slots are available. |
@@ -272,6 +279,53 @@ the JSON response identifies the failing subsystem. This self-check does not
 include the health of configured remote resources; their results are available
 through the health-check log.
 
+### Managing outbound trust anchors
+
+Trust anchors authenticate remote resources checked by the TLS client; they
+are independent of the certificate and private key presented by the management
+API server. Anchor ID `0` is compiled into firmware and cannot be replaced or
+deleted. IDs `1` through `3` are persistent W25Q64 slots.
+
+Convert a root CA certificate from PEM to DER:
+
+```sh
+openssl x509 -in root-ca.pem -outform DER -out root-ca.der
+```
+
+Add it using a raw binary request body:
+
+```sh
+curl -sk -X POST https://<device>/api/v1/trust-anchors \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @root-ca.der
+```
+
+The certificate must be a single valid X.509 CA certificate no larger than
+2048 bytes. The response returns its assigned `id`. Select that ID when adding
+or updating a resource:
+
+```json
+{
+  "host": "ya.ru",
+  "port": 443,
+  "path": "/",
+  "enabled": true,
+  "trust_anchor_id": 1
+}
+```
+
+Uploads are parsed and checked for the CA basic constraint before an A/B Flash
+update is activated. An anchor referenced by a resource cannot be deleted.
+Replacing an anchor keeps its ID and immediately affects later checks. Deleting
+`/api/v1/trust-anchors` resets every resource to factory ID `0` before clearing
+all persistent anchors, providing a recovery path without removing the
+compiled factory certificate.
+
+On the first boot after upgrading, version-1 health-check configuration is
+migrated transactionally. Existing resources retain their host, port, path,
+and enabled state and are assigned factory trust-anchor ID `0`.
+
 ### Updating the server certificate and key
 
 The management server can replace its certificate and private key without a
@@ -280,6 +334,15 @@ reboot. Convert a PEM pair to DER:
 ```sh
 python3 tools/convert_credentials_to_der.py
 ```
+
+This creates `TLS/Private/management_server.crt.der` and
+`TLS/Private/management_server.key.der`. Confirm that both files exist before
+uploading them. The endpoints accept raw DER only; uploading the source PEM
+files is rejected.
+
+The bounded credential store accepts one DER certificate up to 1152 bytes and
+one DER private key up to 384 bytes. Certificate chains are not accepted by
+these endpoints.
 
 Upload the raw DER files without JSON wrapping:
 
@@ -313,13 +376,15 @@ collection variables locally:
 - `baseUrl` — the device URL, updated for its DHCP address if necessary
 - `masterPassword` and `testPassword` — secret test credentials
 - `certificateDerPath` and `privateKeyDerPath` — generated DER files
+- `trustAnchorDerPath` — a DER-encoded root CA certificate for trust-store tests
 
 Trust the management certificate in Postman. The collection tests
 authentication and token rotation, user CRUD, RTC and temperature reads,
-health-check configuration and logs, resource CRUD, credential replacement,
-and token revocation. Scripts automatically retain rotated tokens and the
-resource index created during the run. Depending on the Postman version, raw
-binary upload files may still need to be selected manually.
+health-check configuration and logs, resource CRUD, trust-anchor lifecycle and
+in-use protection, credential replacement, and token revocation. Scripts
+automatically retain rotated tokens and created resource/anchor indices.
+Depending on the Postman version, raw binary upload files may still need to be
+selected manually.
 
 ## Onboard NOR Flash
 
@@ -340,6 +405,7 @@ initialization so the device remains deselected during startup.
 | Health-check configuration | 2 | A/B transactional snapshot on administrator changes. |
 | TLS server credential | 2 | A/B transactional snapshot on credential changes. |
 | Health-check result log | 2 | Wear-aware append-only ring. |
+| TLS client trust anchors | 4 | Two-sector A/B banks updated on CA changes. |
 
 An A/B store writes and verifies a complete snapshot in the inactive sector
 before making it active, protecting infrequently changed data from power loss
@@ -375,9 +441,11 @@ interface is transmit-only and intended for development diagnostics.
 ## Memory
 
 The STM32F407VET6 provides 512 KiB internal Flash, 128 KiB ordinary SRAM, and
-64 KiB CPU-only CCM RAM. The current build uses approximately 321 KiB of
-Flash, 100 KiB of ordinary static SRAM, and a 52 KiB CCM allocation arena for
-Mbed TLS.
+64 KiB CPU-only CCM RAM. The current build uses approximately 327 KiB of
+Flash, 112 KiB of ordinary static SRAM, and 62 KiB of CCM RAM. CCM contains
+the Mbed TLS allocation arena; the temporary trust-store transaction snapshot
+remains in ordinary SRAM so certificate validation can use the largest
+practical contiguous TLS arena.
 
 The linker exposes `.ccmram` for CPU-only working memory. Ethernet descriptors,
 packet buffers, and every other DMA target must remain in ordinary SRAM.

@@ -238,6 +238,7 @@ TlsTransport_StatusTypeDef TlsTransport_Head(
   const char* host,
   uint16_t port,
   const char* resource,
+  uint8_t trustAnchorId,
   TlsTransport_ResultTypeDef* result
 ) {
   if ((host == NULL) || (resource == NULL) || (result == NULL))
@@ -277,13 +278,12 @@ TlsTransport_StatusTypeDef TlsTransport_Head(
   if (detail != 0)
     goto cleanup;
 
-  detail = mbedtls_x509_crt_parse(
-    &trustAnchor,
-    (const unsigned char*)tlsTrustStore_UserTrustRsa,
-    strlen(tlsTrustStore_UserTrustRsa) + 1U
+  TlsTrustStore_StatusTypeDef trustStatus = TlsTrustStore_Parse(
+    trustAnchorId, &trustAnchor
   );
-  if (detail != 0) {
+  if (trustStatus != TLS_TRUST_STORE_STATUS_OK) {
     result->status = TLS_TRANSPORT_CERTIFICATE_ERROR;
+    detail = MBEDTLS_ERR_X509_CERT_VERIFY_FAILED;
     goto cleanup;
   }
 

@@ -14,6 +14,8 @@
     {"key": "testUsername", "value": "operator"},
     {"key": "testPassword", "value": "", "type": "secret"},
     {"key": "resourceIndex", "value": ""},
+    {"key": "trustAnchorId", "value": ""},
+    {"key": "trustAnchorDerPath", "value": "TLS/CA/ISRG_Root_X1.der"},
     {"key": "certificateDerPath", "value": "TLS/Private/management_server.crt.der"},
     {"key": "privateKeyDerPath", "value": "TLS/Private/management_server.key.der"}
   ],
@@ -149,6 +151,35 @@
       }
     },
     {
+      "name": "List trust anchors",
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test(\"Trust anchors returned\", () => pm.response.to.have.status(200));",
+        "const anchors = pm.response.json().trust_anchors;",
+        "pm.expect(anchors).to.be.an(\"array\");",
+        "pm.expect(anchors[0]).to.include({id: 0, factory: true});"
+      ]}}],
+      "request": {
+        "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/trust-anchors"
+      }
+    },
+    {
+      "name": "Create trust anchor (manual file selection may be required)",
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test(\"Trust anchor created\", () => pm.response.to.have.status(201));",
+        "pm.collectionVariables.set(\"trustAnchorId\", pm.response.json().id);"
+      ]}}],
+      "request": {
+        "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/octet-stream"}],
+        "body": {"mode": "file", "file": {"src": "{{trustAnchorDerPath}}"}},
+        "url": "{{baseUrl}}/api/v1/trust-anchors",
+        "description": "Upload one DER-encoded root CA certificate, at most 2048 bytes. Postman may require selecting the file manually."
+      }
+    },
+    {
       "name": "Create health-check resource",
       "event": [{"listen": "test", "script": {"exec": [
         "pm.test(\"Resource created\", () => pm.response.to.have.status(201));",
@@ -159,7 +190,7 @@
         "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},
         "method": "POST",
         "header": [{"key": "Content-Type", "value": "application/json"}],
-        "body": {"mode": "raw", "raw": "{\n  \"host\": \"example.com\",\n  \"port\": 443,\n  \"path\": \"/\",\n  \"enabled\": false\n}"},
+        "body": {"mode": "raw", "raw": "{\n  \"host\": \"example.com\",\n  \"port\": 443,\n  \"path\": \"/\",\n  \"enabled\": false,\n  \"trust_anchor_id\": {{trustAnchorId}}\n}"},
         "url": "{{baseUrl}}/api/v1/health-check/resources"
       }
     },
@@ -175,6 +206,32 @@
         "header": [{"key": "Content-Type", "value": "application/json"}],
         "body": {"mode": "raw", "raw": "{\n  \"path\": \"/health\",\n  \"enabled\": false\n}"},
         "url": "{{baseUrl}}/api/v1/health-check/resources/{{resourceIndex}}"
+      }
+    },
+    {
+      "name": "Reject deletion of in-use trust anchor",
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test(\"In-use anchor protected\", () => pm.response.to.have.status(409));",
+        "pm.expect(pm.response.json().error).to.eql(\"trust_anchor_in_use\");"
+      ]}}],
+      "request": {
+        "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},
+        "method": "DELETE",
+        "url": "{{baseUrl}}/api/v1/trust-anchors/{{trustAnchorId}}"
+      }
+    },
+    {
+      "name": "Replace trust anchor (manual file selection may be required)",
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test(\"Trust anchor replaced\", () => pm.response.to.have.status(200));",
+        "pm.expect(pm.response.json().replaced).to.eql(true);"
+      ]}}],
+      "request": {
+        "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},
+        "method": "PUT",
+        "header": [{"key": "Content-Type", "value": "application/octet-stream"}],
+        "body": {"mode": "file", "file": {"src": "{{trustAnchorDerPath}}"}},
+        "url": "{{baseUrl}}/api/v1/trust-anchors/{{trustAnchorId}}"
       }
     },
     {
@@ -204,6 +261,19 @@
       }
     },
     {
+      "name": "Delete trust anchor",
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.test(\"Trust anchor deleted\", () => pm.response.to.have.status(200));",
+        "pm.expect(pm.response.json().deleted).to.eql(true);",
+        "pm.collectionVariables.unset(\"trustAnchorId\");"
+      ]}}],
+      "request": {
+        "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},
+        "method": "DELETE",
+        "url": "{{baseUrl}}/api/v1/trust-anchors/{{trustAnchorId}}"
+      }
+    },
+    {
       "name": "Upload TLS certificate (manual file selection may be required)",
       "event": [{"listen": "test", "script": {"exec": [
         "pm.test(\"Certificate staged or activated\", () => pm.expect([200, 202]).to.include(pm.response.code));"
@@ -214,7 +284,7 @@
         "header": [{"key": "Content-Type", "value": "application/octet-stream"}],
         "body": {"mode": "file", "file": {"src": "{{certificateDerPath}}"}},
         "url": "{{baseUrl}}/api/v1/tls/certificate",
-        "description": "Generate DER files with tools/convert_credentials_to_der.py. Postman may require selecting the file manually in the Body tab."
+        "description": "First run python3 tools/convert_credentials_to_der.py. Confirm TLS/Private/management_server.crt.der exists, then select that DER file manually in Body > Binary if Postman cannot resolve the path variable. PEM and empty bodies are rejected."
       }
     },
     {
@@ -229,7 +299,7 @@
         "header": [{"key": "Content-Type", "value": "application/octet-stream"}],
         "body": {"mode": "file", "file": {"src": "{{privateKeyDerPath}}"}},
         "url": "{{baseUrl}}/api/v1/tls/private-key",
-        "description": "Run after the certificate upload. Postman may require selecting the file manually in the Body tab."
+        "description": "Run after the certificate upload. Select TLS/Private/management_server.key.der manually in Body > Binary if Postman cannot resolve the path variable. PEM and empty bodies are rejected."
       }
     },
     {
