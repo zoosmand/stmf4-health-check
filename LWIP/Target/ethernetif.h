@@ -1,13 +1,14 @@
-/* USER CODE BEGIN Header */
 /**
- ******************************************************************************
-  * File Name          : ethernetif.h
-  * Description        : This file provides initialization code for LWIP
-  *                      middleWare.
+  ******************************************************************************
+  * @file           : ethernetif.h
+  * @brief          : STM32 Ethernet MAC and DP83848 lwIP interface.
+  * @project        : STM32F407 Health Check
+  * @platform       : STMicroelectronics STM32F407VET6
+  * @created        : 13.01.2026
   ******************************************************************************
   * @attention
   *
-  * Copyright (c) 2026 STMicroelectronics.
+  * Copyright (c) 2017-2026 Dmitry Slobodchikov
   * All rights reserved.
   *
   * This software is licensed under terms that can be found in the LICENSE file
@@ -16,29 +17,16 @@
   *
   ******************************************************************************
   */
-/* USER CODE END Header */
 
-#ifndef __ETHERNETIF_H__
-#define __ETHERNETIF_H__
+#ifndef ETHERNETIF_H
+#define ETHERNETIF_H
+
 #include "lwip/err.h"
 #include "lwip/netif.h"
 
-/* Within 'USER CODE' section, code will be kept by default at each generation */
-/* USER CODE BEGIN 0 */
-
-/* USER CODE END 0 */
-
-/* Exported functions ------------------------------------------------------- */
-err_t ethernetif_init(struct netif *netif);
-
-void ethernetif_input(struct netif *netif);
-void ethernet_link_check_state(struct netif *netif);
-
-void Error_Handler(void);
-u32_t sys_jiffies(void);
+err_t ethernetif_init(struct netif* netif);
+void ethernetif_input(struct netif* netif);
+void ethernet_link_check_state(struct netif* netif);
 u32_t sys_now(void);
 
-/* USER CODE BEGIN 1 */
-
-/* USER CODE END 1 */
-#endif
+#endif /* ETHERNETIF_H */

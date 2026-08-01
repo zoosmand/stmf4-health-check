@@ -13,7 +13,7 @@
 ######################################
 # target
 ######################################
-TARGET = F407_eth_test_04
+TARGET = F407_health_check
 
 
 ######################################
@@ -22,7 +22,7 @@ TARGET = F407_eth_test_04
 # debug build?
 DEBUG = 1
 # optimization
-OPT = -Og
+OPT = -O2
 
 
 #######################################
@@ -31,77 +31,72 @@ OPT = -Og
 # Build path
 BUILD_DIR = build
 
+MBEDTLS_DIR = Middlewares/Third_Party/MbedTLS
+MBEDTLS_SOURCES = $(filter-out \
+$(MBEDTLS_DIR)/library/psa_crypto_storage.c \
+$(MBEDTLS_DIR)/library/psa_its_file.c \
+$(MBEDTLS_DIR)/library/timing.c, \
+$(wildcard $(MBEDTLS_DIR)/library/*.c))
+
 ######################################
 # source
 ######################################
 # C sources
 C_SOURCES =  \
 Core/Src/main.c \
+Core/Src/delay.c \
 Core/Src/stm32f4xx_it.c \
 Core/Src/stm32f4xx_hal_msp.c \
+Srv/Src/rtos.c \
+Srv/Src/api_service.c \
+Srv/Src/auth_service.c \
+Srv/Src/buzzer_service.c \
+Srv/Src/user_store.c \
+Srv/Src/health_check_config.c \
+Srv/Src/health_check_log.c \
+Srv/Src/health_check_service.c \
+Srv/Src/temperature_service.c \
+Srv/Src/time_service.c \
+TLS/Src/tls_platform.c \
+TLS/Src/tls_server_credentials.c \
+TLS/Src/tls_transport.c \
+TLS/Src/tls_trust_store.c \
+Periph/Src/buzzer.c \
+Periph/Src/onewire.c \
+Periph/Src/ds18b20.c \
+Periph/Src/rs485.c \
+Periph/Src/rtc.c \
+Periph/Src/w25q64.c \
 LWIP/App/lwip.c \
 LWIP/Target/ethernetif.c \
+LWIP/Target/sys_arch.c \
+FreeRTOS-Kernel/list.c \
+FreeRTOS-Kernel/queue.c \
+FreeRTOS-Kernel/tasks.c \
+FreeRTOS-Kernel/portable/GCC/ARM_CM4F/port.c \
 Drivers/BSP/Components/dp83848/dp83848.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc_ex.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash_ex.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash_ramfunc.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_gpio.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_dma_ex.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_dma.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr_ex.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_cortex.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_exti.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_eth.c \
+Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_iwdg.c \
+Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_spi.c \
+Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim.c \
+Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim_ex.c \
+Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_crc.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rtc.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rtc_ex.c \
+Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rng.c \
 Core/Src/system_stm32f4xx.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/auth.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/ccp.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/chap_ms.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/chap-md5.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/chap-new.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/demand.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/eap.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/eui64.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/fsm.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/ipcp.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/ipv6cp.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/lcp.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/magic.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/mppe.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/multilink.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/ppp.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/pppapi.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/pppcrypt.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/pppoe.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/pppol2tp.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/pppos.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/upap.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/utils.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/vj.c \
-Middlewares/Third_Party/LwIP/src/netif/bridgeif.c \
-Middlewares/Third_Party/LwIP/src/netif/bridgeif_fdb.c \
 Middlewares/Third_Party/LwIP/src/netif/ethernet.c \
-Middlewares/Third_Party/LwIP/src/netif/lowpan6.c \
-Middlewares/Third_Party/LwIP/src/netif/lowpan6_ble.c \
-Middlewares/Third_Party/LwIP/src/netif/lowpan6_common.c \
-Middlewares/Third_Party/LwIP/src/netif/slipif.c \
-Middlewares/Third_Party/LwIP/src/netif/zepif.c \
-Middlewares/Third_Party/LwIP/src/netif/ppp/ecp.c \
-Middlewares/Third_Party/LwIP/src/api/sockets.c \
-Middlewares/Third_Party/LwIP/src/api/if_api.c \
-Middlewares/Third_Party/LwIP/src/api/netdb.c \
-Middlewares/Third_Party/LwIP/src/api/tcpip.c \
-Middlewares/Third_Party/LwIP/src/api/err.c \
-Middlewares/Third_Party/LwIP/src/api/netifapi.c \
-Middlewares/Third_Party/LwIP/src/api/api_lib.c \
-Middlewares/Third_Party/LwIP/src/api/api_msg.c \
-Middlewares/Third_Party/LwIP/src/api/netbuf.c \
 Middlewares/Third_Party/LwIP/src/core/memp.c \
 Middlewares/Third_Party/LwIP/src/core/sys.c \
 Middlewares/Third_Party/LwIP/src/core/inet_chksum.c \
@@ -111,37 +106,30 @@ Middlewares/Third_Party/LwIP/src/core/ip.c \
 Middlewares/Third_Party/LwIP/src/core/dns.c \
 Middlewares/Third_Party/LwIP/src/core/init.c \
 Middlewares/Third_Party/LwIP/src/core/mem.c \
-Middlewares/Third_Party/LwIP/src/core/altcp_alloc.c \
 Middlewares/Third_Party/LwIP/src/core/def.c \
 Middlewares/Third_Party/LwIP/src/core/udp.c \
 Middlewares/Third_Party/LwIP/src/core/stats.c \
 Middlewares/Third_Party/LwIP/src/core/tcp_in.c \
 Middlewares/Third_Party/LwIP/src/core/netif.c \
-Middlewares/Third_Party/LwIP/src/core/altcp_tcp.c \
 Middlewares/Third_Party/LwIP/src/core/tcp.c \
 Middlewares/Third_Party/LwIP/src/core/pbuf.c \
 Middlewares/Third_Party/LwIP/src/core/timeouts.c \
-Middlewares/Third_Party/LwIP/src/core/altcp.c \
-Middlewares/Third_Party/LwIP/src/core/ipv4/autoip.c \
 Middlewares/Third_Party/LwIP/src/core/ipv4/dhcp.c \
-Middlewares/Third_Party/LwIP/src/core/ipv4/igmp.c \
 Middlewares/Third_Party/LwIP/src/core/ipv4/etharp.c \
 Middlewares/Third_Party/LwIP/src/core/ipv4/icmp.c \
 Middlewares/Third_Party/LwIP/src/core/ipv4/ip4.c \
 Middlewares/Third_Party/LwIP/src/core/ipv4/ip4_frag.c \
 Middlewares/Third_Party/LwIP/src/core/ipv4/ip4_addr.c \
-Middlewares/Third_Party/LwIP/src/core/ipv6/ip6.c \
-Middlewares/Third_Party/LwIP/src/core/ipv6/icmp6.c \
-Middlewares/Third_Party/LwIP/src/core/ipv6/mld6.c \
-Middlewares/Third_Party/LwIP/src/core/ipv6/dhcp6.c \
-Middlewares/Third_Party/LwIP/src/core/ipv6/ethip6.c \
-Middlewares/Third_Party/LwIP/src/core/ipv6/nd6.c \
-Middlewares/Third_Party/LwIP/src/core/ipv6/inet6.c \
-Middlewares/Third_Party/LwIP/src/core/ipv6/ip6_addr.c \
-Middlewares/Third_Party/LwIP/src/core/ipv6/ip6_frag.c \
-Middlewares/Third_Party/LwIP/src/apps/mqtt/mqtt.c \
+Middlewares/Third_Party/LwIP/src/api/tcpip.c \
+Middlewares/Third_Party/LwIP/src/api/api_lib.c \
+Middlewares/Third_Party/LwIP/src/api/api_msg.c \
+Middlewares/Third_Party/LwIP/src/api/err.c \
+Middlewares/Third_Party/LwIP/src/api/netbuf.c \
+Middlewares/Third_Party/LwIP/src/api/netdb.c \
+Middlewares/Third_Party/LwIP/src/api/sockets.c \
 Core/Src/sysmem.c \
-Core/Src/syscalls.c  
+Core/Src/syscalls.c \
+$(MBEDTLS_SOURCES)
 
 # ASM sources
 ASM_SOURCES =  \
@@ -196,7 +184,8 @@ AS_DEFS =
 # C defines
 C_DEFS =  \
 -DUSE_HAL_DRIVER \
--DSTM32F407xx
+-DSTM32F407xx \
+-DMBEDTLS_CONFIG_FILE='<health_checker_mbedtls_config.h>'
 
 
 # AS includes
@@ -206,24 +195,20 @@ AS_INCLUDES =
 C_INCLUDES =  \
 -ILWIP/App \
 -ILWIP/Target \
+-ITLS/Inc \
+-ITLS/Private \
 -ICore/Inc \
+-IPeriph/Inc \
+-ISrv/Inc \
+-IFreeRTOS-Kernel/include \
+-IFreeRTOS-Kernel/portable/GCC/ARM_CM4F \
 -IMiddlewares/Third_Party/LwIP/src/include \
 -IMiddlewares/Third_Party/LwIP/system \
+-I$(MBEDTLS_DIR)/include \
 -IDrivers/STM32F4xx_HAL_Driver/Inc \
 -IDrivers/STM32F4xx_HAL_Driver/Inc/Legacy \
 -IDrivers/BSP/Components/dp83848 \
--IMiddlewares/Third_Party/LwIP/src/include/netif/ppp \
 -IDrivers/CMSIS/Device/ST/STM32F4xx/Include \
--IMiddlewares/Third_Party/LwIP/src/include/lwip \
--IMiddlewares/Third_Party/LwIP/src/include/lwip/apps \
--IMiddlewares/Third_Party/LwIP/src/include/lwip/priv \
--IMiddlewares/Third_Party/LwIP/src/include/lwip/prot \
--IMiddlewares/Third_Party/LwIP/src/include/netif \
--IMiddlewares/Third_Party/LwIP/src/include/compat/posix \
--IMiddlewares/Third_Party/LwIP/src/include/compat/posix/arpa \
--IMiddlewares/Third_Party/LwIP/src/include/compat/posix/net \
--IMiddlewares/Third_Party/LwIP/src/include/compat/posix/sys \
--IMiddlewares/Third_Party/LwIP/src/include/compat/stdc \
 -IMiddlewares/Third_Party/LwIP/system/arch \
 -IDrivers/CMSIS/Include
 

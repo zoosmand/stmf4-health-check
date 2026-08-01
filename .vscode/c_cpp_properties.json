@@ -31,7 +31,14 @@
             "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/compat/posix/sys",
             "${workspaceRoot}/Middlewares/Third_Party/LwIP/src/include/compat/stdc",
             "${workspaceRoot}/Middlewares/Third_Party/LwIP/system/arch",
-            "${workspaceRoot}/Drivers/CMSIS/Include"
+            "${workspaceRoot}/Drivers/CMSIS/Include",
+            "${workspaceRoot}/FreeRTOS-Kernel/include",
+            "${workspaceRoot}/FreeRTOS-Kernel/portable/GCC/ARM_CM4F",
+            "${workspaceRoot}/Srv/Inc",
+            "${workspaceRoot}/Periph/Inc",
+            "${workspaceRoot}/TLS/Inc",
+            "${workspaceRoot}/Middlewares/Third_Party/MbedTLS/include",
+            "${workspaceRoot}/TLS/Private"
          ],
          "defines": [
             "DEBUG",

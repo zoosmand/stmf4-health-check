@@ -61,10 +61,31 @@ dkms.conf
 build/
 build*/
 
+# Locally provisioned TLS server credentials
+TLS/Private/
+
 # Vendir Sources
 Drivers/
 Middlewares/
+FreeRTOS-Kernel/
 
 # macOS trash
 Core/.DS_Store
 .DS_Store
+
+# Certificates
+*.der
+*.pem
+*.crt
+*.crl
+*.key
+*.pfx
+*.p12
+*.jks
+*.jceks
+*.keystore
+*.p7b
+*.srl
+*.jks
+*.csr
+*.ssh/
