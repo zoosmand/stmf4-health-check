@@ -210,7 +210,7 @@ static TlsTrustStore_StatusTypeDef tlsTrustStore_ValidateDer(
     }
     return TLS_TRUST_STORE_STATUS_INVALID_CERTIFICATE;
   }
-  if ((mbedtls_x509_crt_get_ca_istrue(&certificate) == 0)
+  if ((mbedtls_x509_crt_get_ca_istrue(&certificate) != 1)
       || (mbedtls_x509_crt_check_key_usage(
         &certificate, MBEDTLS_X509_KU_KEY_CERT_SIGN
       ) != 0)) {
