@@ -179,7 +179,7 @@ specific lower-level error.
 ### Persistent result log
 
 Every completed check is appended to a Flash-backed ring. The management API
-returns the ten newest records through `GET /api/v1/health-check/logs`:
+returns the fifty newest records through `GET /api/v1/health-check/logs`:
 
 ```json
 {"logs":[{"sequence":123456,"timestamp":1785500000,"resource_index":0,
@@ -272,13 +272,21 @@ development.
 Passwords must contain 12 through 128 bytes, usernames may contain at most 24
 bytes, and all requests are deliberately bounded to protect MCU memory.
 
-`GET /health` is intended for an external availability monitor. It returns
-HTTP `200` with `status: "ok"` when the API, network, synchronized RTC, NOR
-Flash, and current DS18B20 measurements are operational. It returns HTTP `503`
-with `status: "failed"` when any of those checks fails. The `systems` object in
-the JSON response identifies the failing subsystem. This self-check does not
+`GET`/`HEAD /health` is intended for an external availability monitor; `HEAD`
+returns the same status and headers as `GET` without a body. It returns HTTP
+`200` with `status: "ok"` when the API, network, synchronized RTC, NOR Flash,
+and current DS18B20 measurements are operational. It returns HTTP `503` with
+`status: "failed"` when any of those checks fails. The `systems` object in the
+JSON response identifies the failing subsystem. This self-check does not
 include the health of configured remote resources; their results are available
-through the health-check log.
+through the health-check log. The response also reports the firmware `version`
+(from the project-owned `.version` file) and `build_date` (the compiler's
+build timestamp):
+
+```json
+{"status":"ok","version":"0.0.2","build_date":"Aug  3 2026",
+"systems":{"api":true,"network":true,"rtc":true,"flash":true,"temperature":true}}
+```
 
 ### Managing outbound trust anchors
 
