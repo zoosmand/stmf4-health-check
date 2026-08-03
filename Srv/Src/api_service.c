@@ -543,13 +543,16 @@ static int apiService_Dispatch(
       && (rtcHealthy != 0U)
       && (flashHealthy != 0U)
       && (temperatureHealthy != 0U);
-    char json[192];
+    char json[256];
     (void)snprintf(
       json,
       sizeof(json),
-      "{\"status\":\"%s\",\"systems\":{\"api\":true,"
+      "{\"status\":\"%s\",\"version\":\"%s\",\"build_date\":\"%s\","
+      "\"systems\":{\"api\":true,"
       "\"network\":%s,\"rtc\":%s,\"flash\":%s,\"temperature\":%s}}",
       healthy != 0U ? "ok" : "failed",
+      APP_VERSION,
+      __DATE__,
       networkHealthy != 0U ? "true" : "false",
       rtcHealthy != 0U ? "true" : "false",
       flashHealthy != 0U ? "true" : "false",
