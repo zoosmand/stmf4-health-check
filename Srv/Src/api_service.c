@@ -335,11 +335,12 @@ static const char* apiService_Ds18b20StatusText(DS18B20_StatusTypeDef status) {
   }
 }
 
-static int apiService_Respond(
+static int apiService_RespondEx(
   mbedtls_ssl_context* ssl,
   int status,
   const char* reason,
-  const char* json
+  const char* json,
+  uint8_t headOnly
 ) {
   char response[API_SERVICE_RESPONSE_SIZE];
   int length = snprintf(
@@ -353,11 +354,20 @@ static int apiService_Respond(
     status,
     reason,
     (unsigned int)strlen(json),
-    json
+    headOnly != 0U ? "" : json
   );
   if ((length <= 0) || ((size_t)length >= sizeof(response)))
     return MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL;
   return apiService_WriteAll(ssl, response, (size_t)length);
+}
+
+static int apiService_Respond(
+  mbedtls_ssl_context* ssl,
+  int status,
+  const char* reason,
+  const char* json
+) {
+  return apiService_RespondEx(ssl, status, reason, json, 0U);
 }
 
 static int apiService_Error(
@@ -467,8 +477,10 @@ static int apiService_Dispatch(
   mbedtls_ssl_context* ssl,
   const ApiService_RequestTypeDef* request
 ) {
-  if ((strcmp(request->method, "GET") == 0)
+  if (((strcmp(request->method, "GET") == 0)
+        || (strcmp(request->method, "HEAD") == 0))
       && (strcmp(request->path, "/health") == 0)) {
+    uint8_t headOnly = (strcmp(request->method, "HEAD") == 0) ? 1U : 0U;
     uint8_t networkHealthy = Lwip_IsReady();
     uint8_t rtcHealthy = Rtc_IsSynchronized();
     uint8_t flashHealthy = W25Q64_IsAvailable();
@@ -503,11 +515,12 @@ static int apiService_Dispatch(
       flashHealthy != 0U ? "true" : "false",
       temperatureHealthy != 0U ? "true" : "false"
     );
-    return apiService_Respond(
+    return apiService_RespondEx(
       ssl,
       healthy != 0U ? 200 : 503,
       healthy != 0U ? "OK" : "Service Unavailable",
-      json
+      json,
+      headOnly
     );
   }
 

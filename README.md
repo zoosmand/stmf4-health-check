@@ -245,7 +245,7 @@ development.
 
 | Method | Endpoint | Authorization | Purpose |
 |--------|----------|---------------|---------|
-| `GET` | `/health` | None | Report whether the device's essential subsystems are operational. |
+| `GET` `HEAD` | `/health` | None | Report whether the device's essential subsystems are operational. |
 | `POST` | `/api/v1/auth/token` | None | Exchange a username and password for access and refresh tokens. |
 | `POST` | `/api/v1/auth/refresh` | Refresh token in JSON | Rotate both tokens. |
 | `POST` | `/api/v1/auth/revoke` | Bearer | Revoke the active session. |
