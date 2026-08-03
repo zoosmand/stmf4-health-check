@@ -27,7 +27,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define HEALTH_CHECK_LOG_MAX_RESULTS 10U
+#define HEALTH_CHECK_LOG_MAX_RESULTS 50U
 
 /**
   * @brief One retained health-check result.

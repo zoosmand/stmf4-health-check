@@ -255,17 +255,17 @@ development.
 | `DELETE` | `/api/v1/users/{username}` | Administrator bearer | Delete a user and revoke its session. |
 | `PUT` | `/api/v1/tls/certificate` | Administrator bearer | Upload a raw DER server certificate. |
 | `PUT` | `/api/v1/tls/private-key` | Administrator bearer | Upload a raw DER server private key. |
-| `GET` | `/api/v1/trust-anchors` | Administrator bearer | List factory and persistent CA trust anchors. |
+| `GET` | `/api/v1/trust-anchors` | Any authenticated bearer | List factory and persistent CA trust anchors. |
 | `POST` | `/api/v1/trust-anchors` | Administrator bearer | Add a raw DER CA certificate to the first free slot. |
 | `PUT` | `/api/v1/trust-anchors/{id}` | Administrator bearer | Replace a persistent CA certificate. |
 | `DELETE` | `/api/v1/trust-anchors/{id}` | Administrator bearer | Delete an unused persistent CA certificate. |
 | `DELETE` | `/api/v1/trust-anchors` | Administrator bearer | Reassign resources to factory ID 0 and clear persistent anchors. |
-| `GET` | `/api/v1/health-check/config` | Administrator bearer | Read the period and configured resources. |
+| `GET` | `/api/v1/health-check/config` | Any authenticated bearer | Read the period and configured resources. |
 | `PUT` | `/api/v1/health-check/config` | Administrator bearer | Set the period from 60 through 1800 seconds. |
 | `POST` | `/api/v1/health-check/resources` | Administrator bearer | Add a resource; up to three slots are available. |
 | `PUT` | `/api/v1/health-check/resources/{index}` | Administrator bearer | Update a resource; omitted fields retain their values. |
 | `DELETE` | `/api/v1/health-check/resources/{index}` | Administrator bearer | Clear a resource slot; a later resource may reuse its index. |
-| `GET` | `/api/v1/health-check/logs` | Any authenticated bearer | Return the ten newest completed checks. |
+| `GET` | `/api/v1/health-check/logs` | Any authenticated bearer | Return the fifty newest completed checks. |
 | `GET` | `/api/v1/temperature` | Any authenticated bearer | Return the latest DS18B20 readings. |
 | `GET` | `/api/v1/rtc` | Any authenticated bearer | Return UTC time and synchronization state. |
 
