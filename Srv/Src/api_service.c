@@ -811,8 +811,6 @@ static int apiService_Dispatch(
 
   if ((strcmp(request->method, "GET") == 0)
       && (strcmp(request->path, "/api/v1/trust-anchors") == 0)) {
-    if (principal.role != USER_ROLE_ADMINISTRATOR)
-      return apiService_Error(ssl, 403, "Forbidden", "forbidden");
     TlsTrustStore_InfoTypeDef anchors[TLS_TRUST_STORE_MAX_ANCHORS];
     size_t count = TlsTrustStore_List(
       anchors, TLS_TRUST_STORE_MAX_ANCHORS
@@ -946,8 +944,6 @@ static int apiService_Dispatch(
 
   if ((strcmp(request->method, "GET") == 0)
       && (strcmp(request->path, "/api/v1/health-check/config") == 0)) {
-    if (principal.role != USER_ROLE_ADMINISTRATOR)
-      return apiService_Error(ssl, 403, "Forbidden", "forbidden");
     HealthCheckConfig_ResourceTypeDef resources[
       HEALTH_CHECK_CONFIG_MAX_RESOURCES
     ];
