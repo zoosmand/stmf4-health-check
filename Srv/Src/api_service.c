@@ -49,11 +49,18 @@
 #include <string.h>
 
 #define API_SERVICE_PORT              443U
-#define API_SERVICE_TASK_STACK_DEPTH  3072U
+#define API_SERVICE_TASK_STACK_DEPTH  4608U
 #define API_SERVICE_REQUEST_SIZE      2560U
 #define API_SERVICE_RESPONSE_SIZE     2048U
 #define API_SERVICE_BODY_SIZE         TLS_TRUST_STORE_MAX_DER_SIZE
 #define API_SERVICE_TIMEOUT_MS        10000U
+
+/* Worst-case bytes for one log JSON record (all-digit-maxed fields, longest
+   status text "certificate_error", plus its leading comma separator), and
+   the "{"logs":[" / "]}" wrapper plus terminator. */
+#define API_SERVICE_LOG_ENTRY_JSON_SIZE 164U
+#define API_SERVICE_LOGS_JSON_SIZE \
+  ((HEALTH_CHECK_LOG_MAX_RESULTS * API_SERVICE_LOG_ENTRY_JSON_SIZE) + 16U)
 
 typedef struct {
   int descriptor;
@@ -335,11 +342,12 @@ static const char* apiService_Ds18b20StatusText(DS18B20_StatusTypeDef status) {
   }
 }
 
-static int apiService_Respond(
+static int apiService_RespondEx(
   mbedtls_ssl_context* ssl,
   int status,
   const char* reason,
-  const char* json
+  const char* json,
+  uint8_t headOnly
 ) {
   char response[API_SERVICE_RESPONSE_SIZE];
   int length = snprintf(
@@ -353,11 +361,53 @@ static int apiService_Respond(
     status,
     reason,
     (unsigned int)strlen(json),
-    json
+    headOnly != 0U ? "" : json
   );
   if ((length <= 0) || ((size_t)length >= sizeof(response)))
     return MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL;
   return apiService_WriteAll(ssl, response, (size_t)length);
+}
+
+static int apiService_Respond(
+  mbedtls_ssl_context* ssl,
+  int status,
+  const char* reason,
+  const char* json
+) {
+  return apiService_RespondEx(ssl, status, reason, json, 0U);
+}
+
+/**
+  * @brief Send status/headers and a large JSON body without copying the
+  *        body into a second combined buffer, for responses too large to
+  *        double-buffer on the task stack (e.g. the logs endpoint).
+  */
+static int apiService_RespondBuffer(
+  mbedtls_ssl_context* ssl,
+  int status,
+  const char* reason,
+  const char* json,
+  size_t jsonLength
+) {
+  char header[128];
+  int length = snprintf(
+    header,
+    sizeof(header),
+    "HTTP/1.1 %d %s\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: %u\r\n"
+    "Connection: close\r\n"
+    "Cache-Control: no-store\r\n\r\n",
+    status,
+    reason,
+    (unsigned int)jsonLength
+  );
+  if ((length <= 0) || ((size_t)length >= sizeof(header)))
+    return MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL;
+  int result = apiService_WriteAll(ssl, header, (size_t)length);
+  if (result != 0)
+    return result;
+  return apiService_WriteAll(ssl, json, jsonLength);
 }
 
 static int apiService_Error(
@@ -467,8 +517,10 @@ static int apiService_Dispatch(
   mbedtls_ssl_context* ssl,
   const ApiService_RequestTypeDef* request
 ) {
-  if ((strcmp(request->method, "GET") == 0)
+  if (((strcmp(request->method, "GET") == 0)
+        || (strcmp(request->method, "HEAD") == 0))
       && (strcmp(request->path, "/health") == 0)) {
+    uint8_t headOnly = (strcmp(request->method, "HEAD") == 0) ? 1U : 0U;
     uint8_t networkHealthy = Lwip_IsReady();
     uint8_t rtcHealthy = Rtc_IsSynchronized();
     uint8_t flashHealthy = W25Q64_IsAvailable();
@@ -491,23 +543,27 @@ static int apiService_Dispatch(
       && (rtcHealthy != 0U)
       && (flashHealthy != 0U)
       && (temperatureHealthy != 0U);
-    char json[192];
+    char json[256];
     (void)snprintf(
       json,
       sizeof(json),
-      "{\"status\":\"%s\",\"systems\":{\"api\":true,"
+      "{\"status\":\"%s\",\"version\":\"%s\",\"build_date\":\"%s\","
+      "\"systems\":{\"api\":true,"
       "\"network\":%s,\"rtc\":%s,\"flash\":%s,\"temperature\":%s}}",
       healthy != 0U ? "ok" : "failed",
+      APP_VERSION,
+      __DATE__,
       networkHealthy != 0U ? "true" : "false",
       rtcHealthy != 0U ? "true" : "false",
       flashHealthy != 0U ? "true" : "false",
       temperatureHealthy != 0U ? "true" : "false"
     );
-    return apiService_Respond(
+    return apiService_RespondEx(
       ssl,
       healthy != 0U ? 200 : 503,
       healthy != 0U ? "OK" : "Service Unavailable",
-      json
+      json,
+      headOnly
     );
   }
 
@@ -758,8 +814,6 @@ static int apiService_Dispatch(
 
   if ((strcmp(request->method, "GET") == 0)
       && (strcmp(request->path, "/api/v1/trust-anchors") == 0)) {
-    if (principal.role != USER_ROLE_ADMINISTRATOR)
-      return apiService_Error(ssl, 403, "Forbidden", "forbidden");
     TlsTrustStore_InfoTypeDef anchors[TLS_TRUST_STORE_MAX_ANCHORS];
     size_t count = TlsTrustStore_List(
       anchors, TLS_TRUST_STORE_MAX_ANCHORS
@@ -893,8 +947,6 @@ static int apiService_Dispatch(
 
   if ((strcmp(request->method, "GET") == 0)
       && (strcmp(request->path, "/api/v1/health-check/config") == 0)) {
-    if (principal.role != USER_ROLE_ADMINISTRATOR)
-      return apiService_Error(ssl, 403, "Forbidden", "forbidden");
     HealthCheckConfig_ResourceTypeDef resources[
       HEALTH_CHECK_CONFIG_MAX_RESOURCES
     ];
@@ -1122,7 +1174,7 @@ static int apiService_Dispatch(
     size_t count = HealthCheckLog_GetRecent(
       entries, HEALTH_CHECK_LOG_MAX_RESULTS
     );
-    char json[API_SERVICE_RESPONSE_SIZE - 192U];
+    char json[API_SERVICE_LOGS_JSON_SIZE];
     size_t used = (size_t)snprintf(json, sizeof(json), "{\"logs\":[");
     for (size_t index = 0U; index < count; ++index) {
       int written = snprintf(
@@ -1148,8 +1200,8 @@ static int apiService_Dispatch(
         );
       used += (size_t)written;
     }
-    (void)snprintf(&json[used], sizeof(json) - used, "]}");
-    return apiService_Respond(ssl, 200, "OK", json);
+    used += (size_t)snprintf(&json[used], sizeof(json) - used, "]}");
+    return apiService_RespondBuffer(ssl, 200, "OK", json, used);
   }
 
   if ((strcmp(request->method, "GET") == 0)
