@@ -64,7 +64,7 @@ TLS/Src/tls_trust_store.c \
 Periph/Src/buzzer.c \
 Periph/Src/onewire.c \
 Periph/Src/ds18b20.c \
-Periph/Src/rs485.c \
+Periph/Src/rs232.c \
 Periph/Src/rtc.c \
 Periph/Src/w25q64.c \
 LWIP/App/lwip.c \

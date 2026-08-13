@@ -34,7 +34,7 @@ Project documentation:
 - W25Q64JV NOR Flash interface on SPI2
 - DS18B20 support for up to six sensors on the dedicated one-wire connector
 - Passive-buzzer alerts for failed resource checks
-- Diagnostic `printf()` output through the onboard RS485 interface
+- Diagnostic `printf()` output through the onboard RS232 interface
 - Device-specific locally administered MAC address derived from the STM32 UID
 
 ## Runtime architecture
@@ -449,10 +449,10 @@ handles the pattern timing without blocking TLS, networking, sensors, or the
 watchdog. Concurrent requests are coalesced rather than accumulated in an
 unbounded queue.
 
-## RS485 diagnostic output
+## RS232 diagnostic output
 
-`printf()` is temporarily routed to the onboard RS485 interface. Connect the
-matching `A` and `B` terminals of an RS485-to-USB adapter and use:
+`printf()` is routed to USART2 through the board's RS232 transceiver. Connect
+an RS232-to-USB adapter and use:
 
 - 115200 baud
 - 8 data bits
@@ -460,8 +460,8 @@ matching `A` and `B` terminals of an RS485-to-USB adapter and use:
 - 1 stop bit
 - no flow control
 
-USART2 uses `PD5`/`PD6`, with `PD7` controlling transceiver direction. The
-interface is transmit-only and intended for development diagnostics.
+USART2 uses `PD5`/`PD6`. The firmware uses the interface only for transmitted
+development diagnostics; no receive path is currently implemented.
 
 ## Memory
 

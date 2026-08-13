@@ -22,7 +22,7 @@
 
 /* Includes */
 #include "rtc.h"
-#include "rs485.h"
+#include "rs232.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -115,7 +115,7 @@ __attribute__((weak)) int _write(int file, char *ptr, int len)
   if (schedulerRunning == pdTRUE)
     vTaskSuspendAll();
 
-  HAL_StatusTypeDef status = Rs485_Transmit(
+  HAL_StatusTypeDef status = Rs232_Transmit(
     (const uint8_t*)ptr,
     (size_t)len
   );

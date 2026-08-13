@@ -23,7 +23,7 @@
 #include "FreeRTOS.h"
 #include "lwip.h"
 #include "rtc.h"
-#include "rs485.h"
+#include "rs232.h"
 #include "rtos.h"
 #include "task.h"
 
@@ -47,9 +47,9 @@ int main(void) {
   peripheral_CrcInit();
   if (Rtc_Init() != HAL_OK)
     Error_Handler();
-  if (Rs485_Init() != HAL_OK)
+  if (Rs232_Init() != HAL_OK)
     Error_Handler();
-  printf("RS485 standard output ready.\r\n");
+  printf("RS232 standard output ready.\r\n");
 
   peripheral_Spi2Init();
 
