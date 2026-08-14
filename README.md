@@ -451,7 +451,7 @@ unbounded queue.
 
 ## RS232 diagnostic output
 
-`printf()` is routed to USART2 through the board's RS232 transceiver. Connect
+`printf()` is routed to USART1 through the board's RS232 transceiver. Connect
 an RS232-to-USB adapter and use:
 
 - 115200 baud
@@ -460,7 +460,7 @@ an RS232-to-USB adapter and use:
 - 1 stop bit
 - no flow control
 
-USART2 uses `PD5`/`PD6`. The firmware uses the interface only for transmitted
+USART1 uses `PA9`/`PA10`. The firmware uses the interface only for transmitted
 development diagnostics; no receive path is currently implemented.
 
 ## Memory

@@ -120,26 +120,26 @@ void HAL_TIM_PWM_MspDeInit(TIM_HandleTypeDef* timer) {
 }
 
 void HAL_UART_MspInit(UART_HandleTypeDef* uart) {
-  if ((uart == NULL) || (uart->Instance != USART2))
+  if ((uart == NULL) || (uart->Instance != USART1))
     return;
 
-  __HAL_RCC_USART2_CLK_ENABLE();
-  __HAL_RCC_GPIOD_CLK_ENABLE();
+  __HAL_RCC_USART1_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
 
   GPIO_InitTypeDef uartPins = {
-    .Pin = GPIO_PIN_5 | GPIO_PIN_6,
+    .Pin = GPIO_PIN_9 | GPIO_PIN_10,
     .Mode = GPIO_MODE_AF_PP,
     .Pull = GPIO_PULLUP,
     .Speed = GPIO_SPEED_FREQ_VERY_HIGH,
-    .Alternate = GPIO_AF7_USART2,
+    .Alternate = GPIO_AF7_USART1,
   };
-  HAL_GPIO_Init(GPIOD, &uartPins);
+  HAL_GPIO_Init(GPIOA, &uartPins);
 }
 
 void HAL_UART_MspDeInit(UART_HandleTypeDef* uart) {
-  if ((uart == NULL) || (uart->Instance != USART2))
+  if ((uart == NULL) || (uart->Instance != USART1))
     return;
 
-  __HAL_RCC_USART2_CLK_DISABLE();
-  HAL_GPIO_DeInit(GPIOD, GPIO_PIN_5 | GPIO_PIN_6);
+  __HAL_RCC_USART1_CLK_DISABLE();
+  HAL_GPIO_DeInit(GPIOA, GPIO_PIN_9 | GPIO_PIN_10);
 }

@@ -27,7 +27,7 @@
 #include <stdint.h>
 
 /**
-  * @brief Initialize USART2 for the onboard RS232 transceiver.
+  * @brief Initialize USART1 for the onboard RS232 transceiver.
   * @retval (HAL_StatusTypeDef) HAL_OK when the interface is ready.
   */
 HAL_StatusTypeDef Rs232_Init(void);

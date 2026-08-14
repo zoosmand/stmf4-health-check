@@ -26,7 +26,7 @@ static UART_HandleTypeDef rs232Uart;
 static uint8_t rs232Initialized;
 
 HAL_StatusTypeDef Rs232_Init(void) {
-  rs232Uart.Instance = USART2;
+  rs232Uart.Instance = USART1;
   rs232Uart.Init.BaudRate = 115200U;
   rs232Uart.Init.WordLength = UART_WORDLENGTH_8B;
   rs232Uart.Init.StopBits = UART_STOPBITS_1;
