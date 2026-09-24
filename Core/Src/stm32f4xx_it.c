@@ -22,6 +22,7 @@
 #include "stm32f4xx_it.h"
 
 #include "FreeRTOS.h"
+#include "rs232.h"
 #include "task.h"
 
 extern void xPortSysTickHandler(void);
@@ -59,4 +60,8 @@ void SysTick_Handler(void) {
 
   if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED)
     xPortSysTickHandler();
+}
+
+void USART1_IRQHandler(void) {
+  Rs232_HandleInterrupt();
 }

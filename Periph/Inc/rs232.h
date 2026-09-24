@@ -26,6 +26,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/** Number of bytes observed by the USART1 receive interrupt probe. */
+extern volatile uint32_t rs232ReceiveInterruptCount;
+
+/** Number of USART1 receive interrupts carrying a hardware error flag. */
+extern volatile uint32_t rs232ReceiveErrorCount;
+
+/** Most recent byte observed by the USART1 receive interrupt probe. */
+extern volatile uint8_t rs232LastReceivedByte;
+
 /**
   * @brief Initialize USART1 for the onboard RS232 transceiver.
   * @retval (HAL_StatusTypeDef) HAL_OK when the interface is ready.
@@ -40,5 +49,11 @@ HAL_StatusTypeDef Rs232_Init(void);
   * @note This function blocks for at most one second per HAL transfer.
   */
 HAL_StatusTypeDef Rs232_Transmit(const uint8_t* data, size_t length);
+
+/**
+  * @brief Capture pending USART1 receive data and error flags.
+  * @note Call only from USART1_IRQHandler().
+  */
+void Rs232_HandleInterrupt(void);
 
 #endif /* RS232_H */
