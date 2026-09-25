@@ -190,6 +190,8 @@ static void factoryReset_Task(void* argument) {
     printf("Factory reset: double-click S1 within 10 seconds to cancel.\r\n");
     if (factoryReset_CancelRequested(windowStarted) != 0U) {
       printf("Factory reset: cancelled.\r\n");
+      if (BuzzerService_FactoryResetCancelled() != SUCCESS)
+        printf("Factory reset: cancellation acknowledgement failed.\r\n");
       continue;
     }
     while ((Platform_GetTick() - windowStarted)

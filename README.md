@@ -477,6 +477,7 @@ of Ethernet connectivity and health-check results.
 Hold the onboard `S1` button (`PE10`, active-low) continuously for 10 seconds
 to arm a factory reset. Five warning tones are played, followed by a 10-second
 cancellation window. Release S1 and double-click it within 600 ms to cancel.
+Cancellation is acknowledged with three beeps.
 If the window expires, the device erases management users, health-check
 configuration and history, trust anchors, and uploaded management-server TLS
 credentials, then reboots.

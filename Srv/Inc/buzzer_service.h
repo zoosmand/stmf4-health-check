@@ -38,4 +38,7 @@ ErrorStatus BuzzerService_Alert(void);
   */
 ErrorStatus BuzzerService_FactoryResetWarning(void);
 
+/** @brief Play the three-beep factory-reset cancellation acknowledgement. */
+ErrorStatus BuzzerService_FactoryResetCancelled(void);
+
 #endif /* BUZZER_SERVICE_H */

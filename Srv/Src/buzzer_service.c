@@ -96,7 +96,7 @@ ErrorStatus BuzzerService_Alert(void) {
   return SUCCESS;
 }
 
-ErrorStatus BuzzerService_FactoryResetWarning(void) {
+static ErrorStatus buzzerService_PlayAndWait(uint8_t resetWarning) {
   if (buzzerTask == NULL)
     return ERROR;
   TaskHandle_t requester = xTaskGetCurrentTaskHandle();
@@ -106,10 +106,18 @@ ErrorStatus BuzzerService_FactoryResetWarning(void) {
     return ERROR;
   }
   resetWarningRequester = requester;
-  resetWarningRequested = 1U;
+  resetWarningRequested = resetWarning;
   taskEXIT_CRITICAL();
   xTaskNotifyGive(buzzerTask);
   return ulTaskNotifyTake(
     pdTRUE, pdMS_TO_TICKS(BUZZER_RESET_WARNING_TIMEOUT_MS)
   ) != 0U ? SUCCESS : ERROR;
+}
+
+ErrorStatus BuzzerService_FactoryResetWarning(void) {
+  return buzzerService_PlayAndWait(1U);
+}
+
+ErrorStatus BuzzerService_FactoryResetCancelled(void) {
+  return buzzerService_PlayAndWait(0U);
 }
