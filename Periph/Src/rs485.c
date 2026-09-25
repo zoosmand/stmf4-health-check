@@ -21,62 +21,54 @@
 #include "rs485.h"
 
 #define RS485_DIRECTION_PORT GPIOD
-#define RS485_DIRECTION_PIN  GPIO_PIN_7
+#define RS485_DIRECTION_PIN  7U
 #define RS485_TIMEOUT_MS     1000U
 
-static UART_HandleTypeDef rs485Uart;
 static uint8_t rs485Initialized;
 
-HAL_StatusTypeDef Rs485_Init(void) {
-  rs485Uart.Instance = USART2;
-  rs485Uart.Init.BaudRate = 115200U;
-  rs485Uart.Init.WordLength = UART_WORDLENGTH_8B;
-  rs485Uart.Init.StopBits = UART_STOPBITS_1;
-  rs485Uart.Init.Parity = UART_PARITY_NONE;
-  rs485Uart.Init.Mode = UART_MODE_TX_RX;
-  rs485Uart.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  rs485Uart.Init.OverSampling = UART_OVERSAMPLING_16;
-
-  if (HAL_UART_Init(&rs485Uart) != HAL_OK)
-    return HAL_ERROR;
-
-  HAL_GPIO_WritePin(
-    RS485_DIRECTION_PORT,
-    RS485_DIRECTION_PIN,
-    GPIO_PIN_RESET
-  );
+Platform_StatusTypeDef Rs485_Init(void) {
+  RCC->AHB1ENR |= RCC_AHB1ENR_GPIODEN;
+  RCC->APB1ENR |= RCC_APB1ENR_USART2EN;
+  (void)RCC->APB1ENR;
+  Platform_GpioWrite(RS485_DIRECTION_PORT, RS485_DIRECTION_PIN, 0U);
+  Platform_GpioConfigure(GPIOD, 7U, 1U, 0U, 3U, 0U);
+  Platform_GpioConfigure(GPIOD, 5U, 2U, 0U, 3U, 7U);
+  Platform_GpioConfigure(GPIOD, 6U, 2U, 0U, 3U, 7U);
+  USART2->BRR = 365U;
+  USART2->CR1 = USART_CR1_TE | USART_CR1_RE | USART_CR1_UE;
   rs485Initialized = 1U;
-  return HAL_OK;
+  return PLATFORM_STATUS_OK;
 }
 
-HAL_StatusTypeDef Rs485_Transmit(const uint8_t* data, size_t length) {
+Platform_StatusTypeDef Rs485_Transmit(const uint8_t* data, size_t length) {
   if ((rs485Initialized == 0U) || (data == NULL))
-    return HAL_ERROR;
+    return PLATFORM_STATUS_ERROR;
 
   if (length == 0U)
-    return HAL_OK;
+    return PLATFORM_STATUS_OK;
 
   if (length > UINT16_MAX)
-    return HAL_ERROR;
+    return PLATFORM_STATUS_ERROR;
 
-  HAL_GPIO_WritePin(
-    RS485_DIRECTION_PORT,
-    RS485_DIRECTION_PIN,
-    GPIO_PIN_SET
-  );
-
-  HAL_StatusTypeDef status = HAL_UART_Transmit(
-    &rs485Uart,
-    data,
-    (uint16_t)length,
-    RS485_TIMEOUT_MS
-  );
-
-  HAL_GPIO_WritePin(
-    RS485_DIRECTION_PORT,
-    RS485_DIRECTION_PIN,
-    GPIO_PIN_RESET
-  );
+  Platform_GpioWrite(RS485_DIRECTION_PORT, RS485_DIRECTION_PIN, 1U);
+  uint32_t started = Platform_GetTick();
+  Platform_StatusTypeDef status = PLATFORM_STATUS_OK;
+  for (size_t offset = 0U; offset < length; ++offset) {
+    while ((USART2->SR & USART_SR_TXE) == 0U) {
+      if ((Platform_GetTick() - started) >= RS485_TIMEOUT_MS) {
+        status = PLATFORM_STATUS_TIMEOUT;
+        break;
+      }
+    }
+    if (status != PLATFORM_STATUS_OK)
+      break;
+    USART2->DR = data[offset];
+  }
+  while ((status == PLATFORM_STATUS_OK) && ((USART2->SR & USART_SR_TC) == 0U)) {
+    if ((Platform_GetTick() - started) >= RS485_TIMEOUT_MS)
+      status = PLATFORM_STATUS_TIMEOUT;
+  }
+  Platform_GpioWrite(RS485_DIRECTION_PORT, RS485_DIRECTION_PIN, 0U);
 
   return status;
 }

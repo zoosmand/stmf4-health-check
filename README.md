@@ -19,6 +19,7 @@ Project documentation:
 ## Features
 
 - STM32F407VET6 running at 168 MHz from a 25 MHz HSE
+- CMSIS register-level peripheral drivers with no STM32 HAL dependency
 - FreeRTOS with statically allocated application tasks
 - lwIP 2.1.2 with a dedicated TCP/IP core thread
 - Integrated Ethernet MAC, RMII, and DP83848 PHY
@@ -68,8 +69,8 @@ lwIP uses `NO_SYS=0` and a native FreeRTOS system port. Ethernet frames are
 handled by the network task, while protocol processing and raw API callbacks
 run in lwIP's TCP/IP core thread.
 
-SysTick remains the STM32 HAL timebase. Its interrupt increments the HAL tick
-and, after the scheduler starts, also dispatches the FreeRTOS tick. FreeRTOS
+SysTick supplies the platform millisecond timebase. Its interrupt increments
+the platform tick and, after the scheduler starts, also dispatches the FreeRTOS tick. FreeRTOS
 provides the SVC and PendSV handlers through its Cortex-M4F port.
 
 The watchdog uses the LSI clock, prescaler 256, and reload value 4095, giving a
@@ -115,15 +116,15 @@ checked once per configured period, from 60 through 1800 seconds. The default
 period is 60 seconds and a freshly provisioned device contains one resource:
 `https://pgw.intraclear.com/`.
 
-Factory anchor ID `0` contains the compiled USERTrust RSA Certification
-Authority required by the default target. Administrators can add as many as
-three DER-encoded root CA certificates to NOR Flash and select one through each
-resource's `trust_anchor_id`. Only the selected anchor is parsed for a check,
-keeping runtime memory bounded. Correct RTC time remains mandatory for
-certificate validation.
+On first provisioning, mutable anchor slot `0` contains the SSL.com TLS RSA
+Root CA 2022 used by the default target. All four slots, IDs `0` through `3`,
+are stored in NOR Flash and may be replaced or deleted. A referenced anchor
+cannot be deleted; replace or remove its dependent resources first. Only the
+selected anchor is parsed for a check, keeping runtime memory bounded. Correct
+RTC time remains mandatory for certificate validation.
 
 TLS obtains entropy from the STM32 hardware random-number generator. Its
-dedicated 52 KiB allocator arena resides in CPU-only CCM RAM, preserving
+dedicated 62 KiB allocator arena resides in CPU-only CCM RAM, preserving
 ordinary SRAM for FreeRTOS, lwIP, and Ethernet DMA. The transport layer is
 kept independent of STM32F407 peripherals to simplify future STM32F767 and
 STM32F769 ports.
@@ -255,11 +256,11 @@ development.
 | `DELETE` | `/api/v1/users/{username}` | Administrator bearer | Delete a user and revoke its session. |
 | `PUT` | `/api/v1/tls/certificate` | Administrator bearer | Upload a raw DER server certificate. |
 | `PUT` | `/api/v1/tls/private-key` | Administrator bearer | Upload a raw DER server private key. |
-| `GET` | `/api/v1/trust-anchors` | Any authenticated bearer | List factory and persistent CA trust anchors. |
+| `GET` | `/api/v1/trust-anchors` | Any authenticated bearer | List persistent CA trust anchors. |
 | `POST` | `/api/v1/trust-anchors` | Administrator bearer | Add a raw DER CA certificate to the first free slot. |
 | `PUT` | `/api/v1/trust-anchors/{id}` | Administrator bearer | Replace a persistent CA certificate. |
 | `DELETE` | `/api/v1/trust-anchors/{id}` | Administrator bearer | Delete an unused persistent CA certificate. |
-| `DELETE` | `/api/v1/trust-anchors` | Administrator bearer | Reassign resources to factory ID 0 and clear persistent anchors. |
+| `DELETE` | `/api/v1/trust-anchors` | Administrator bearer | Clear all anchors when none are referenced. |
 | `GET` | `/api/v1/health-check/config` | Any authenticated bearer | Read the period and configured resources. |
 | `PUT` | `/api/v1/health-check/config` | Administrator bearer | Set the period from 60 through 1800 seconds. |
 | `POST` | `/api/v1/health-check/resources` | Administrator bearer | Add a resource; up to three slots are available. |
@@ -292,8 +293,10 @@ build timestamp):
 
 Trust anchors authenticate remote resources checked by the TLS client; they
 are independent of the certificate and private key presented by the management
-API server. Anchor ID `0` is compiled into firmware and cannot be replaced or
-deleted. IDs `1` through `3` are persistent W25Q64 slots.
+API server. IDs `0` through `3` are mutable W25Q64 slots. A fresh store seeds
+ID `0` with SSL.com TLS RSA Root CA 2022 for `pgw.intraclear.com`; the seed is
+ordinary persistent configuration after provisioning, not a protected factory
+anchor.
 
 Convert a root CA certificate from PEM to DER:
 
@@ -326,14 +329,16 @@ or updating a resource:
 
 Uploads are parsed and checked for the CA basic constraint before an A/B Flash
 update is activated. An anchor referenced by a resource cannot be deleted.
-Replacing an anchor keeps its ID and immediately affects later checks. Deleting
-`/api/v1/trust-anchors` resets every resource to factory ID `0` before clearing
-all persistent anchors, providing a recovery path without removing the
-compiled factory certificate.
+Replacing an anchor keeps its ID and immediately affects later checks. An
+individual anchor or the complete store can be deleted only when no configured
+resource references the affected ID. This prevents enabled or disabled
+resources from retaining a dangling trust-anchor dependency.
 
 On the first boot after upgrading, version-1 health-check configuration is
 migrated transactionally. Existing resources retain their host, port, path,
-and enabled state and are assigned factory trust-anchor ID `0`.
+and enabled state and are assigned default trust-anchor ID `0`. Version-1
+trust-anchor slots are also migrated transactionally; the new mutable default
+is inserted at ID `0` and the former custom IDs `1` through `3` are preserved.
 
 ### Updating the server certificate and key
 
@@ -467,24 +472,24 @@ interface is transmit-only and intended for development diagnostics.
 
 The STM32F407VET6 provides 512 KiB internal Flash, 128 KiB ordinary SRAM, and
 64 KiB CPU-only CCM RAM. The current build uses approximately 327 KiB of
-Flash, 113 KiB of ordinary static SRAM, and 62 KiB of CCM RAM. CCM contains
-the Mbed TLS allocation arena; the temporary trust-store transaction snapshot
-remains in ordinary SRAM so certificate validation can use the largest
-practical contiguous TLS arena.
+Flash, 116 KiB of ordinary static SRAM, and 62 KiB of CCM RAM. CCM contains
+the Mbed TLS allocation arena; the mutable trust-store snapshot remains in
+ordinary SRAM so certificate validation can use the largest practical
+contiguous TLS arena.
 
 The linker exposes `.ccmram` for CPU-only working memory. Ethernet descriptors,
 packet buffers, and every other DMA target must remain in ordinary SRAM.
 
 ## Project structure
 
-- `Core/` — application startup, HAL configuration, and exception handlers
+- `Core/` — application startup, CMSIS platform configuration, and exceptions
 - `Periph/` — board peripheral drivers
 - `Srv/` — FreeRTOS application and network services
 - `FreeRTOS-Kernel/` — imported kernel and Cortex-M4F port
 - `LWIP/App/` — application-level lwIP initialization
 - `LWIP/Target/` — Ethernet MAC and DP83848 adaptation
 - `TLS/` — platform adaptation, trust store, and HTTPS transport
-- `Drivers/` — ST HAL, CMSIS, and PHY vendor sources
+- `Drivers/` — CMSIS device headers and PHY vendor sources
 - `Middlewares/` — imported lwIP and Mbed TLS source distributions
 - `tools/` — credential-generation and conversion utilities
 - `test/postman/` — management API integration collection

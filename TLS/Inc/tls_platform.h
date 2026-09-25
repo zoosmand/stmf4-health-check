@@ -25,16 +25,16 @@
 
 /**
   * @brief Initialize entropy, Mbed TLS memory, and crypto serialization.
-  * @retval (HAL_StatusTypeDef) HAL_OK when every platform facility is ready.
+  * @retval (Platform_StatusTypeDef) PLATFORM_STATUS_OK when every platform facility is ready.
   */
-HAL_StatusTypeDef TlsPlatform_Init(void);
+Platform_StatusTypeDef TlsPlatform_Init(void);
 
 /**
   * @brief Obtain exclusive access to the shared Mbed TLS platform state.
-  * @retval (HAL_StatusTypeDef) HAL_OK when the caller owns the crypto lock.
+  * @retval (Platform_StatusTypeDef) PLATFORM_STATUS_OK when the caller owns the crypto lock.
   * @note The caller must be a FreeRTOS task and must call TlsPlatform_Unlock().
   */
-HAL_StatusTypeDef TlsPlatform_Lock(void);
+Platform_StatusTypeDef TlsPlatform_Lock(void);
 
 /**
   * @brief Release exclusive access to the shared Mbed TLS platform state.
@@ -46,8 +46,8 @@ void TlsPlatform_Unlock(void);
   * @brief Fill a buffer from the STM32 hardware random-number generator.
   * @param output (uint8_t*) Non-null output buffer.
   * @param length (size_t) Number of random bytes requested.
-  * @retval (HAL_StatusTypeDef) HAL_OK when the complete buffer was filled.
+  * @retval (Platform_StatusTypeDef) PLATFORM_STATUS_OK when the complete buffer was filled.
   */
-HAL_StatusTypeDef TlsPlatform_Random(uint8_t* output, size_t length);
+Platform_StatusTypeDef TlsPlatform_Random(uint8_t* output, size_t length);
 
 #endif /* TLS_PLATFORM_H */

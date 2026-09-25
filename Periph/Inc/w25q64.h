@@ -20,7 +20,7 @@
 #define W25Q64_SECTOR_SIZE     4096U
 #define W25Q64_PAGE_SIZE       256U
 
-HAL_StatusTypeDef W25Q64_Init(void);
+Platform_StatusTypeDef W25Q64_Init(void);
 
 /**
   * @brief Verify that the expected NOR Flash still responds on SPI2.
@@ -28,9 +28,9 @@ HAL_StatusTypeDef W25Q64_Init(void);
   */
 uint8_t W25Q64_IsAvailable(void);
 
-HAL_StatusTypeDef W25Q64_Read(uint32_t address, void* data, size_t length);
-HAL_StatusTypeDef W25Q64_EraseSector(uint32_t address);
-HAL_StatusTypeDef W25Q64_Program(
+Platform_StatusTypeDef W25Q64_Read(uint32_t address, void* data, size_t length);
+Platform_StatusTypeDef W25Q64_EraseSector(uint32_t address);
+Platform_StatusTypeDef W25Q64_Program(
   uint32_t address,
   const void* data,
   size_t length

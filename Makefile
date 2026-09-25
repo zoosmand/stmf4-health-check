@@ -44,9 +44,9 @@ $(wildcard $(MBEDTLS_DIR)/library/*.c))
 # C sources
 C_SOURCES =  \
 Core/Src/main.c \
+Core/Src/device_platform.c \
 Core/Src/delay.c \
 Core/Src/stm32f4xx_it.c \
-Core/Src/stm32f4xx_hal_msp.c \
 Srv/Src/rtos.c \
 Srv/Src/api_service.c \
 Srv/Src/auth_service.c \
@@ -75,26 +75,6 @@ FreeRTOS-Kernel/queue.c \
 FreeRTOS-Kernel/tasks.c \
 FreeRTOS-Kernel/portable/GCC/ARM_CM4F/port.c \
 Drivers/BSP/Components/dp83848/dp83848.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc_ex.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash_ex.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_gpio.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr_ex.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_cortex.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_exti.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_eth.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_iwdg.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_spi.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim_ex.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_crc.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rtc.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rtc_ex.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rng.c \
 Core/Src/system_stm32f4xx.c \
 Middlewares/Third_Party/LwIP/src/netif/ethernet.c \
 Middlewares/Third_Party/LwIP/src/core/memp.c \
@@ -186,8 +166,8 @@ AS_DEFS =
 
 # C defines
 C_DEFS =  \
--DUSE_HAL_DRIVER \
 -DSTM32F407xx \
+-DHSE_VALUE=25000000U \
 -DAPP_VERSION='"$(APP_VERSION)"' \
 -DMBEDTLS_CONFIG_FILE='<health_checker_mbedtls_config.h>'
 
@@ -209,8 +189,6 @@ C_INCLUDES =  \
 -IMiddlewares/Third_Party/LwIP/src/include \
 -IMiddlewares/Third_Party/LwIP/system \
 -I$(MBEDTLS_DIR)/include \
--IDrivers/STM32F4xx_HAL_Driver/Inc \
--IDrivers/STM32F4xx_HAL_Driver/Inc/Legacy \
 -IDrivers/BSP/Components/dp83848 \
 -IDrivers/CMSIS/Device/ST/STM32F4xx/Include \
 -IMiddlewares/Third_Party/LwIP/system/arch \

@@ -158,7 +158,7 @@ static void healthCheckConfig_SetDefault(
   );
 }
 
-static HAL_StatusTypeDef healthCheckConfig_Save(
+static Platform_StatusTypeDef healthCheckConfig_Save(
   HealthCheckConfig_SnapshotTypeDef* candidate
 ) {
   uint32_t target = (activeAddress == HEALTH_CHECK_CONFIG_SECTOR_A)
@@ -170,53 +170,53 @@ static HAL_StatusTypeDef healthCheckConfig_Save(
   candidate->crc = healthCheckConfig_Crc(
     candidate, offsetof(HealthCheckConfig_SnapshotTypeDef, crc)
   );
-  if ((W25Q64_EraseSector(target) != HAL_OK)
-      || (W25Q64_Program(target, candidate, sizeof(*candidate)) != HAL_OK))
-    return HAL_ERROR;
+  if ((W25Q64_EraseSector(target) != PLATFORM_STATUS_OK)
+      || (W25Q64_Program(target, candidate, sizeof(*candidate)) != PLATFORM_STATUS_OK))
+    return PLATFORM_STATUS_ERROR;
   /* Static to keep the startup task's stack bounded. */
   static HealthCheckConfig_SnapshotTypeDef verification;
-  if ((W25Q64_Read(target, &verification, sizeof(verification)) != HAL_OK)
+  if ((W25Q64_Read(target, &verification, sizeof(verification)) != PLATFORM_STATUS_OK)
       || (healthCheckConfig_IsValid(&verification) == 0U)
       || (verification.generation != candidate->generation))
-    return HAL_ERROR;
+    return PLATFORM_STATUS_ERROR;
   snapshot = *candidate;
   activeAddress = target;
-  return HAL_OK;
+  return PLATFORM_STATUS_OK;
 }
 
-HAL_StatusTypeDef HealthCheckConfig_Init(void) {
+Platform_StatusTypeDef HealthCheckConfig_Init(void) {
   configMutex = xSemaphoreCreateMutexStatic(&configMutexControlBlock);
   if (configMutex == NULL)
-    return HAL_ERROR;
+    return PLATFORM_STATUS_ERROR;
   /* Static to keep the startup task's stack bounded. */
   static HealthCheckConfig_SnapshotTypeDef first;
   static HealthCheckConfig_SnapshotTypeDef second;
   uint8_t firstValid = (W25Q64_Read(
     HEALTH_CHECK_CONFIG_SECTOR_A, &first, sizeof(first)
-  ) == HAL_OK) && healthCheckConfig_IsValid(&first);
+  ) == PLATFORM_STATUS_OK) && healthCheckConfig_IsValid(&first);
   uint8_t secondValid = (W25Q64_Read(
     HEALTH_CHECK_CONFIG_SECTOR_B, &second, sizeof(second)
-  ) == HAL_OK) && healthCheckConfig_IsValid(&second);
+  ) == PLATFORM_STATUS_OK) && healthCheckConfig_IsValid(&second);
   if ((firstValid != 0U)
       && ((secondValid == 0U) || (first.generation >= second.generation))) {
     snapshot = first;
     activeAddress = HEALTH_CHECK_CONFIG_SECTOR_A;
-    return HAL_OK;
+    return PLATFORM_STATUS_OK;
   }
   if (secondValid != 0U) {
     snapshot = second;
     activeAddress = HEALTH_CHECK_CONFIG_SECTOR_B;
-    return HAL_OK;
+    return PLATFORM_STATUS_OK;
   }
 
   static HealthCheckConfig_LegacySnapshotTypeDef legacyFirst;
   static HealthCheckConfig_LegacySnapshotTypeDef legacySecond;
   uint8_t legacyFirstValid = (W25Q64_Read(
     HEALTH_CHECK_CONFIG_SECTOR_A, &legacyFirst, sizeof(legacyFirst)
-  ) == HAL_OK) && healthCheckConfig_IsLegacyValid(&legacyFirst);
+  ) == PLATFORM_STATUS_OK) && healthCheckConfig_IsLegacyValid(&legacyFirst);
   uint8_t legacySecondValid = (W25Q64_Read(
     HEALTH_CHECK_CONFIG_SECTOR_B, &legacySecond, sizeof(legacySecond)
-  ) == HAL_OK) && healthCheckConfig_IsLegacyValid(&legacySecond);
+  ) == PLATFORM_STATUS_OK) && healthCheckConfig_IsLegacyValid(&legacySecond);
   if ((legacyFirstValid != 0U) || (legacySecondValid != 0U)) {
     const HealthCheckConfig_LegacySnapshotTypeDef* legacy =
       ((legacyFirstValid != 0U) && ((legacySecondValid == 0U)
@@ -254,7 +254,7 @@ HealthCheckConfig_StatusTypeDef HealthCheckConfig_SetPeriodSeconds(
   HealthCheckConfig_SnapshotTypeDef candidate = snapshot;
   candidate.periodSeconds = periodSeconds;
   HealthCheckConfig_StatusTypeDef status =
-    (healthCheckConfig_Save(&candidate) == HAL_OK)
+    (healthCheckConfig_Save(&candidate) == PLATFORM_STATUS_OK)
       ? HEALTH_CHECK_CONFIG_STATUS_OK
       : HEALTH_CHECK_CONFIG_STATUS_STORAGE_ERROR;
   (void)xSemaphoreGive(configMutex);
@@ -314,7 +314,7 @@ HealthCheckConfig_StatusTypeDef HealthCheckConfig_AddResource(
     sizeof(candidate.resources[index].path) - 1U
   );
   HealthCheckConfig_StatusTypeDef status =
-    (healthCheckConfig_Save(&candidate) == HAL_OK)
+    (healthCheckConfig_Save(&candidate) == PLATFORM_STATUS_OK)
       ? HEALTH_CHECK_CONFIG_STATUS_OK
       : HEALTH_CHECK_CONFIG_STATUS_STORAGE_ERROR;
   if ((status == HEALTH_CHECK_CONFIG_STATUS_OK) && (assignedIndex != NULL))
@@ -361,7 +361,7 @@ HealthCheckConfig_StatusTypeDef HealthCheckConfig_UpdateResource(
     sizeof(candidate.resources[index].path) - 1U
   );
   HealthCheckConfig_StatusTypeDef status =
-    (healthCheckConfig_Save(&candidate) == HAL_OK)
+    (healthCheckConfig_Save(&candidate) == PLATFORM_STATUS_OK)
       ? HEALTH_CHECK_CONFIG_STATUS_OK
       : HEALTH_CHECK_CONFIG_STATUS_STORAGE_ERROR;
   (void)xSemaphoreGive(configMutex);
@@ -382,7 +382,7 @@ HealthCheckConfig_StatusTypeDef HealthCheckConfig_DeleteResource(
   HealthCheckConfig_SnapshotTypeDef candidate = snapshot;
   memset(&candidate.resources[index], 0, sizeof(candidate.resources[index]));
   HealthCheckConfig_StatusTypeDef status =
-    (healthCheckConfig_Save(&candidate) == HAL_OK)
+    (healthCheckConfig_Save(&candidate) == PLATFORM_STATUS_OK)
       ? HEALTH_CHECK_CONFIG_STATUS_OK
       : HEALTH_CHECK_CONFIG_STATUS_STORAGE_ERROR;
   (void)xSemaphoreGive(configMutex);
@@ -402,18 +402,4 @@ uint8_t HealthCheckConfig_IsTrustAnchorInUse(uint8_t trustAnchorId) {
   }
   (void)xSemaphoreGive(configMutex);
   return inUse;
-}
-
-HealthCheckConfig_StatusTypeDef HealthCheckConfig_ResetTrustAnchors(void) {
-  if (xSemaphoreTake(configMutex, portMAX_DELAY) != pdTRUE)
-    return HEALTH_CHECK_CONFIG_STATUS_STORAGE_ERROR;
-  HealthCheckConfig_SnapshotTypeDef candidate = snapshot;
-  for (uint8_t index = 0U; index < HEALTH_CHECK_CONFIG_MAX_RESOURCES; ++index)
-    candidate.resources[index].trustAnchorId = 0U;
-  HealthCheckConfig_StatusTypeDef status =
-    (healthCheckConfig_Save(&candidate) == HAL_OK)
-      ? HEALTH_CHECK_CONFIG_STATUS_OK
-      : HEALTH_CHECK_CONFIG_STATUS_STORAGE_ERROR;
-  (void)xSemaphoreGive(configMutex);
-  return status;
 }

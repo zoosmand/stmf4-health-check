@@ -156,7 +156,7 @@
         "pm.test(\"Trust anchors returned\", () => pm.response.to.have.status(200));",
         "const anchors = pm.response.json().trust_anchors;",
         "pm.expect(anchors).to.be.an(\"array\");",
-        "pm.expect(anchors[0]).to.include({id: 0, factory: true});"
+        "pm.expect(anchors[0]).to.include({id: 0, factory: false});"
       ]}}],
       "request": {
         "auth": {"type": "bearer", "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]},

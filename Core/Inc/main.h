@@ -21,12 +21,10 @@
 #ifndef MAIN_H
 #define MAIN_H
 
-#include "stm32f4xx_hal.h"
+#include "platform.h"
 
-#define FLASH_CS_PIN       GPIO_PIN_3
+#define FLASH_CS_PIN       3U
 #define FLASH_CS_GPIO_PORT GPIOE
-
-extern SPI_HandleTypeDef hspi2;
 
 void Error_Handler(void);
 

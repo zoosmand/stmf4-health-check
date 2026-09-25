@@ -24,40 +24,28 @@
 #define BUZZER_TIMER_PERIOD    399U
 #define BUZZER_TIMER_PULSE     200U
 
-static TIM_HandleTypeDef buzzerTimer;
-
-HAL_StatusTypeDef Buzzer_Init(void) {
-  buzzerTimer.Instance = TIM1;
-  buzzerTimer.Init.Prescaler = BUZZER_TIMER_PRESCALER;
-  buzzerTimer.Init.CounterMode = TIM_COUNTERMODE_UP;
-  buzzerTimer.Init.Period = BUZZER_TIMER_PERIOD;
-  buzzerTimer.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  buzzerTimer.Init.RepetitionCounter = 0U;
-  buzzerTimer.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_PWM_Init(&buzzerTimer) != HAL_OK)
-    return HAL_ERROR;
-
-  TIM_OC_InitTypeDef channel = {
-    .OCMode = TIM_OCMODE_PWM1,
-    .Pulse = BUZZER_TIMER_PULSE,
-    .OCPolarity = TIM_OCPOLARITY_HIGH,
-    .OCNPolarity = TIM_OCNPOLARITY_HIGH,
-    .OCFastMode = TIM_OCFAST_DISABLE,
-    .OCIdleState = TIM_OCIDLESTATE_RESET,
-    .OCNIdleState = TIM_OCNIDLESTATE_RESET,
-  };
-  if (HAL_TIM_PWM_ConfigChannel(
-        &buzzerTimer, &channel, TIM_CHANNEL_1
-      ) != HAL_OK) {
-    return HAL_ERROR;
-  }
+Platform_StatusTypeDef Buzzer_Init(void) {
+  RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
+  RCC->APB2ENR |= RCC_APB2ENR_TIM1EN;
+  (void)RCC->APB2ENR;
+  Platform_GpioConfigure(GPIOA, 8U, 2U, 0U, 3U, 1U);
+  TIM1->PSC = BUZZER_TIMER_PRESCALER;
+  TIM1->ARR = BUZZER_TIMER_PERIOD;
+  TIM1->CCR1 = BUZZER_TIMER_PULSE;
+  TIM1->CCMR1 = TIM_CCMR1_OC1M_1 | TIM_CCMR1_OC1M_2;
+  TIM1->CCER = TIM_CCER_CC1E;
+  TIM1->BDTR = TIM_BDTR_MOE;
+  TIM1->EGR = TIM_EGR_UG;
   return Buzzer_Stop();
 }
 
-HAL_StatusTypeDef Buzzer_Start(void) {
-  return HAL_TIM_PWM_Start(&buzzerTimer, TIM_CHANNEL_1);
+Platform_StatusTypeDef Buzzer_Start(void) {
+  TIM1->CR1 |= TIM_CR1_CEN;
+  return PLATFORM_STATUS_OK;
 }
 
-HAL_StatusTypeDef Buzzer_Stop(void) {
-  return HAL_TIM_PWM_Stop(&buzzerTimer, TIM_CHANNEL_1);
+Platform_StatusTypeDef Buzzer_Stop(void) {
+  TIM1->CR1 &= ~TIM_CR1_CEN;
+  TIM1->CNT = 0U;
+  return PLATFORM_STATUS_OK;
 }

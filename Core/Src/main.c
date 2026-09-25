@@ -31,23 +31,20 @@
 
 #define ETHERNET_PHY_STARTUP_DELAY_MS 2500U
 
-CRC_HandleTypeDef hcrc;
-SPI_HandleTypeDef hspi2;
-
 static void system_ClockConfigure(void);
 static void peripheral_GpioInit(void);
 static void peripheral_CrcInit(void);
 static void peripheral_Spi2Init(void);
 
 int main(void) {
-  HAL_Init();
   system_ClockConfigure();
+  Platform_Init();
 
   peripheral_GpioInit();
   peripheral_CrcInit();
-  if (Rtc_Init() != HAL_OK)
+  if (Rtc_Init() != PLATFORM_STATUS_OK)
     Error_Handler();
-  if (Rs485_Init() != HAL_OK)
+  if (Rs485_Init() != PLATFORM_STATUS_OK)
     Error_Handler();
   printf("RS485 standard output ready.\r\n");
 
@@ -57,7 +54,7 @@ int main(void) {
    * This board's Ethernet PHY is not ready immediately after power-up.
    * Allow it to stabilize before the MAC and LwIP initialize the interface.
    */
-  HAL_Delay(ETHERNET_PHY_STARTUP_DELAY_MS);
+  Platform_Delay(ETHERNET_PHY_STARTUP_DELAY_MS);
   printf("Startup: PHY delay complete.\r\n");
 
   if (Rtos_Init() != RTOS_STATUS_OK)
@@ -69,76 +66,62 @@ int main(void) {
 }
 
 static void system_ClockConfigure(void) {
-  RCC_OscInitTypeDef oscillator = {0};
-  RCC_ClkInitTypeDef clock = {0};
+  RCC->APB1ENR |= RCC_APB1ENR_PWREN;
+  (void)RCC->APB1ENR;
+  PWR->CR = (PWR->CR & ~PWR_CR_VOS) | PWR_CR_VOS;
 
-  __HAL_RCC_PWR_CLK_ENABLE();
-  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+  RCC->CR |= RCC_CR_HSEON;
+  while ((RCC->CR & RCC_CR_HSERDY) == 0U) {
+  }
 
-  oscillator.OscillatorType =
-    RCC_OSCILLATORTYPE_HSE | RCC_OSCILLATORTYPE_LSE;
-  oscillator.HSEState = RCC_HSE_ON;
-  oscillator.LSEState = RCC_LSE_ON;
-  oscillator.PLL.PLLState = RCC_PLL_ON;
-  oscillator.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  oscillator.PLL.PLLM = 25U;
-  oscillator.PLL.PLLN = 336U;
-  oscillator.PLL.PLLP = RCC_PLLP_DIV2;
-  oscillator.PLL.PLLQ = 4U;
-  if (HAL_RCC_OscConfig(&oscillator) != HAL_OK)
-    Error_Handler();
+  PWR->CR |= PWR_CR_DBP;
+  while ((PWR->CR & PWR_CR_DBP) == 0U) {
+  }
+  RCC->BDCR |= RCC_BDCR_LSEON;
+  while ((RCC->BDCR & RCC_BDCR_LSERDY) == 0U) {
+  }
 
-  clock.ClockType = RCC_CLOCKTYPE_HCLK
-    | RCC_CLOCKTYPE_SYSCLK
-    | RCC_CLOCKTYPE_PCLK1
-    | RCC_CLOCKTYPE_PCLK2;
-  clock.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-  clock.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  clock.APB1CLKDivider = RCC_HCLK_DIV4;
-  clock.APB2CLKDivider = RCC_HCLK_DIV2;
-  if (HAL_RCC_ClockConfig(&clock, FLASH_LATENCY_5) != HAL_OK)
-    Error_Handler();
+  RCC->PLLCFGR = 25U
+    | (336U << RCC_PLLCFGR_PLLN_Pos)
+    | (0U << RCC_PLLCFGR_PLLP_Pos)
+    | RCC_PLLCFGR_PLLSRC_HSE
+    | (7U << RCC_PLLCFGR_PLLQ_Pos);
+  RCC->CR |= RCC_CR_PLLON;
+  while ((RCC->CR & RCC_CR_PLLRDY) == 0U) {
+  }
+
+  FLASH->ACR = FLASH_ACR_LATENCY_5WS
+    | FLASH_ACR_PRFTEN | FLASH_ACR_ICEN | FLASH_ACR_DCEN;
+  RCC->CFGR = (RCC->CFGR
+      & ~(RCC_CFGR_HPRE | RCC_CFGR_PPRE1 | RCC_CFGR_PPRE2 | RCC_CFGR_SW))
+    | RCC_CFGR_PPRE1_DIV4 | RCC_CFGR_PPRE2_DIV2 | RCC_CFGR_SW_PLL;
+  while ((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_PLL) {
+  }
+  SystemCoreClockUpdate();
 }
 
 static void peripheral_GpioInit(void) {
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
-  __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOE_CLK_ENABLE();
-  __HAL_RCC_GPIOH_CLK_ENABLE();
-
-  HAL_GPIO_WritePin(FLASH_CS_GPIO_PORT, FLASH_CS_PIN, GPIO_PIN_SET);
-
-  GPIO_InitTypeDef flashChipSelect = {
-    .Pin = FLASH_CS_PIN,
-    .Mode = GPIO_MODE_OUTPUT_PP,
-    .Pull = GPIO_PULLUP,
-    .Speed = GPIO_SPEED_FREQ_VERY_HIGH,
-  };
-  HAL_GPIO_Init(FLASH_CS_GPIO_PORT, &flashChipSelect);
+  RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN | RCC_AHB1ENR_GPIOBEN
+    | RCC_AHB1ENR_GPIOCEN | RCC_AHB1ENR_GPIOEEN | RCC_AHB1ENR_GPIOHEN;
+  (void)RCC->AHB1ENR;
+  Platform_GpioWrite(FLASH_CS_GPIO_PORT, FLASH_CS_PIN, 1U);
+  Platform_GpioConfigure(FLASH_CS_GPIO_PORT, FLASH_CS_PIN, 1U, 1U, 3U, 0U);
 }
 
 static void peripheral_CrcInit(void) {
-  hcrc.Instance = CRC;
-  if (HAL_CRC_Init(&hcrc) != HAL_OK)
-    Error_Handler();
+  RCC->AHB1ENR |= RCC_AHB1ENR_CRCEN;
+  CRC->CR = CRC_CR_RESET;
 }
 
 static void peripheral_Spi2Init(void) {
-  hspi2.Instance = SPI2;
-  hspi2.Init.Mode = SPI_MODE_MASTER;
-  hspi2.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi2.Init.DataSize = SPI_DATASIZE_8BIT;
-  hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi2.Init.NSS = SPI_NSS_SOFT;
-  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
-  hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
-  hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
-  hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-  hspi2.Init.CRCPolynomial = 7U;
-  if (HAL_SPI_Init(&hspi2) != HAL_OK)
-    Error_Handler();
+  RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN | RCC_AHB1ENR_GPIOCEN;
+  RCC->APB1ENR |= RCC_APB1ENR_SPI2EN;
+  (void)RCC->APB1ENR;
+  Platform_GpioConfigure(GPIOB, 10U, 2U, 0U, 3U, 5U);
+  Platform_GpioConfigure(GPIOC, 2U, 2U, 0U, 3U, 5U);
+  Platform_GpioConfigure(GPIOC, 3U, 2U, 0U, 3U, 5U);
+  SPI2->CR1 = SPI_CR1_MSTR | SPI_CR1_SSM | SPI_CR1_SSI
+    | SPI_CR1_BR_0 | SPI_CR1_SPE;
 }
 
 void Error_Handler(void) {
