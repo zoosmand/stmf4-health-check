@@ -56,6 +56,11 @@
   (W25Q64_CAPACITY_BYTES - (12U * W25Q64_SECTOR_SIZE))
 #define FLASH_LAYOUT_TLS_TRUST_STORE_BANK_SECTORS 3U
 
+/* A valid marker here makes a factory reset recoverable after power loss. */
+#define FLASH_LAYOUT_FACTORY_RESET_MARKER_SECTOR \
+  (W25Q64_CAPACITY_BYTES - (16U * W25Q64_SECTOR_SIZE))
+#define FLASH_LAYOUT_FACTORY_RESET_DATA_SECTORS 15U
+
 /* Version-1 trust-store locations, retained only for one-time migration. */
 #define FLASH_LAYOUT_TLS_TRUST_STORE_LEGACY_BANK_A \
   (W25Q64_CAPACITY_BYTES - (12U * W25Q64_SECTOR_SIZE))

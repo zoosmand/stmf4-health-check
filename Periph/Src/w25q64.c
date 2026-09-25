@@ -12,6 +12,7 @@
 
 #include "FreeRTOS.h"
 #include "semphr.h"
+#include "task.h"
 
 #define W25Q64_COMMAND_JEDEC_ID       0x9FU
 #define W25Q64_COMMAND_READ           0x03U
@@ -93,7 +94,10 @@ static Platform_StatusTypeDef w25q64_WaitReady(uint32_t timeoutMs) {
       return PLATFORM_STATUS_ERROR;
     if ((status & W25Q64_STATUS_BUSY) == 0U)
       return PLATFORM_STATUS_OK;
-    vTaskDelay(pdMS_TO_TICKS(1U));
+    if (xTaskGetSchedulerState() == taskSCHEDULER_RUNNING)
+      vTaskDelay(pdMS_TO_TICKS(1U));
+    else
+      Platform_Delay(1U);
   } while ((Platform_GetTick() - started) < timeoutMs);
   return PLATFORM_STATUS_TIMEOUT;
 }

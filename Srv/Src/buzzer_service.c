@@ -31,10 +31,14 @@
 #define BUZZER_ALERT_TONE_DURATION_MS   180U
 #define BUZZER_ALERT_PAUSE_DURATION_MS  140U
 #define BUZZER_ALERT_TONE_COUNT         3U
+#define BUZZER_RESET_WARNING_TONE_COUNT 5U
+#define BUZZER_RESET_WARNING_TIMEOUT_MS 5000U
 
 static StaticTask_t buzzerTaskControlBlock;
 static StackType_t buzzerTaskStack[BUZZER_SERVICE_TASK_STACK_DEPTH];
 static TaskHandle_t buzzerTask;
+static TaskHandle_t resetWarningRequester;
+static uint8_t resetWarningRequested;
 
 static void buzzerService_Tone(uint32_t durationMs) {
   if (Buzzer_Start() != PLATFORM_STATUS_OK)
@@ -52,11 +56,21 @@ static void buzzerService_Task(void* argument) {
   printf("Buzzer self-test: completed.\r\n");
   for (;;) {
     (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-    for (uint8_t tone = 0U; tone < BUZZER_ALERT_TONE_COUNT; ++tone) {
+    taskENTER_CRITICAL();
+    uint8_t toneCount = resetWarningRequested != 0U
+      ? BUZZER_RESET_WARNING_TONE_COUNT
+      : BUZZER_ALERT_TONE_COUNT;
+    TaskHandle_t requester = resetWarningRequester;
+    resetWarningRequested = 0U;
+    resetWarningRequester = NULL;
+    taskEXIT_CRITICAL();
+    for (uint8_t tone = 0U; tone < toneCount; ++tone) {
       buzzerService_Tone(BUZZER_ALERT_TONE_DURATION_MS);
-      if ((tone + 1U) < BUZZER_ALERT_TONE_COUNT)
+      if ((tone + 1U) < toneCount)
         vTaskDelay(pdMS_TO_TICKS(BUZZER_ALERT_PAUSE_DURATION_MS));
     }
+    if (requester != NULL)
+      xTaskNotifyGive(requester);
   }
 }
 
@@ -80,4 +94,22 @@ ErrorStatus BuzzerService_Alert(void) {
     return ERROR;
   xTaskNotifyGive(buzzerTask);
   return SUCCESS;
+}
+
+ErrorStatus BuzzerService_FactoryResetWarning(void) {
+  if (buzzerTask == NULL)
+    return ERROR;
+  TaskHandle_t requester = xTaskGetCurrentTaskHandle();
+  taskENTER_CRITICAL();
+  if (resetWarningRequester != NULL) {
+    taskEXIT_CRITICAL();
+    return ERROR;
+  }
+  resetWarningRequester = requester;
+  resetWarningRequested = 1U;
+  taskEXIT_CRITICAL();
+  xTaskNotifyGive(buzzerTask);
+  return ulTaskNotifyTake(
+    pdTRUE, pdMS_TO_TICKS(BUZZER_RESET_WARNING_TIMEOUT_MS)
+  ) != 0U ? SUCCESS : ERROR;
 }

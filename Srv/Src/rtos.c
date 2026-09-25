@@ -23,6 +23,7 @@
 #include "FreeRTOS.h"
 #include "api_service.h"
 #include "buzzer_service.h"
+#include "factory_reset_service.h"
 #include "health_check_config.h"
 #include "health_check_log.h"
 #include "health_check_service.h"
@@ -103,6 +104,8 @@ static void rtos_StartupTask(void* argument) {
   if (W25Q64_Init() != PLATFORM_STATUS_OK)
     Error_Handler();
   printf("W25Q64 flash ready.\r\n");
+  if (FactoryResetService_Recover() != PLATFORM_STATUS_OK)
+    Error_Handler();
   if ((TlsTrustStore_Init() != PLATFORM_STATUS_OK)
       || (HealthCheckConfig_Init() != PLATFORM_STATUS_OK)
       || (HealthCheckLog_Init() != PLATFORM_STATUS_OK)
@@ -117,6 +120,8 @@ static void rtos_StartupTask(void* argument) {
       || (HealthCheckService_Init() != SUCCESS)) {
     Error_Handler();
   }
+  if (FactoryResetService_Init() != SUCCESS)
+    Error_Handler();
 
   TaskHandle_t networkTask = xTaskCreateStatic(
     rtos_NetworkTask,
