@@ -55,6 +55,7 @@ Srv/Src/user_store.c \
 Srv/Src/health_check_config.c \
 Srv/Src/health_check_log.c \
 Srv/Src/health_check_service.c \
+Srv/Src/heartbeat_service.c \
 Srv/Src/temperature_service.c \
 Srv/Src/time_service.c \
 TLS/Src/tls_platform.c \

@@ -35,6 +35,7 @@ Project documentation:
 - W25Q64JV NOR Flash interface on SPI2
 - DS18B20 support for up to six sensors on the dedicated one-wire connector
 - Passive-buzzer alerts for failed resource checks
+- Human-like heartbeat indication on the first onboard user LED
 - Diagnostic `printf()` output through the onboard RS485 interface
 - Device-specific locally administered MAC address derived from the STM32 UID
 
@@ -54,6 +55,7 @@ into two phases:
 The principal services are:
 
 - **Default task** — starts and refreshes the independent watchdog.
+- **Heartbeat service** — drives LED1 with two short pulses once per second.
 - **Network task** — initializes lwIP, drains Ethernet frames, monitors the PHY,
   and maintains DHCP or fallback addressing.
 - **Time service** — synchronizes the hardware RTC with `pool.ntp.org` and
@@ -457,6 +459,14 @@ Hardware PWM generates the tone, while a statically allocated FreeRTOS task
 handles the pattern timing without blocking TLS, networking, sensors, or the
 watchdog. Concurrent requests are coalesced rather than accumulated in an
 unbounded queue.
+
+## Heartbeat LED
+
+The first onboard user LED (`LED1`, `PE13`) indicates that the FreeRTOS
+scheduler is running. The LED is wired open-drain and active-low. A dedicated
+statically allocated service task produces a human-like one-second pattern:
+120 ms on, 100 ms off, 120 ms on, and 660 ms off. The heartbeat is independent
+of Ethernet connectivity and health-check results.
 
 ## RS485 diagnostic output
 

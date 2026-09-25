@@ -26,6 +26,7 @@
 #include "health_check_config.h"
 #include "health_check_log.h"
 #include "health_check_service.h"
+#include "heartbeat_service.h"
 #include "lwip.h"
 #include "main.h"
 #include "task.h"
@@ -74,6 +75,10 @@ Rtos_StatusTypeDef Rtos_Init(void) {
     &defaultTaskControlBlock
   );
   if (taskHandle == NULL)
+    return RTOS_STATUS_TASK_ERROR;
+
+  printf("RTOS init: heartbeat service.\r\n");
+  if (HeartbeatService_Init() != SUCCESS)
     return RTOS_STATUS_TASK_ERROR;
 
   printf("RTOS init: startup task.\r\n");

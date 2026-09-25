@@ -18,6 +18,7 @@ typedef enum {
 #define PLATFORM_GPIO_PULL_NONE       0U
 #define PLATFORM_GPIO_PULL_UP         1U
 #define PLATFORM_GPIO_PULL_DOWN       2U
+#define PLATFORM_GPIO_SPEED_LOW       0U
 #define PLATFORM_GPIO_SPEED_VERY_HIGH 3U
 
 void Platform_Init(void);
