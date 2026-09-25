@@ -37,10 +37,10 @@ static StackType_t buzzerTaskStack[BUZZER_SERVICE_TASK_STACK_DEPTH];
 static TaskHandle_t buzzerTask;
 
 static void buzzerService_Tone(uint32_t durationMs) {
-  if (Buzzer_Start() != HAL_OK)
+  if (Buzzer_Start() != PLATFORM_STATUS_OK)
     Error_Handler();
   vTaskDelay(pdMS_TO_TICKS(durationMs));
-  if (Buzzer_Stop() != HAL_OK)
+  if (Buzzer_Stop() != PLATFORM_STATUS_OK)
     Error_Handler();
 }
 
@@ -61,7 +61,7 @@ static void buzzerService_Task(void* argument) {
 }
 
 ErrorStatus BuzzerService_Init(void) {
-  if (Buzzer_Init() != HAL_OK)
+  if (Buzzer_Init() != PLATFORM_STATUS_OK)
     return ERROR;
   buzzerTask = xTaskCreateStatic(
     buzzerService_Task,

@@ -72,7 +72,7 @@ int _gettimeofday(struct timeval *timeValue, void *timezone)
   }
 
   uint32_t unixTime;
-  if (Rtc_GetUnixTime(&unixTime) != HAL_OK) {
+  if (Rtc_GetUnixTime(&unixTime) != PLATFORM_STATUS_OK) {
     errno = EIO;
     return -1;
   }
@@ -115,7 +115,7 @@ __attribute__((weak)) int _write(int file, char *ptr, int len)
   if (schedulerRunning == pdTRUE)
     vTaskSuspendAll();
 
-  HAL_StatusTypeDef status = Rs485_Transmit(
+  Platform_StatusTypeDef status = Rs485_Transmit(
     (const uint8_t*)ptr,
     (size_t)len
   );
@@ -123,7 +123,7 @@ __attribute__((weak)) int _write(int file, char *ptr, int len)
   if (schedulerRunning == pdTRUE)
     (void)xTaskResumeAll();
 
-  if (status != HAL_OK) {
+  if (status != PLATFORM_STATUS_OK) {
     errno = EIO;
     return -1;
   }

@@ -23,7 +23,7 @@
 #include <string.h>
 
 #define ONEWIRE_PORT GPIOE
-#define ONEWIRE_PIN  GPIO_PIN_2
+#define ONEWIRE_PIN  2U
 #define ONEWIRE_COMMAND_SEARCH_ROM        0xF0U
 #define ONEWIRE_COMMAND_MATCH_ROM         0x55U
 #define ONEWIRE_COMMAND_READ_POWER_SUPPLY 0xB4U
@@ -39,14 +39,9 @@ static uint32_t oneWire_InterruptLock(void);
 static void oneWire_InterruptUnlock(uint32_t interruptMask);
 
 ErrorStatus OneWire_Init(void) {
-  HAL_GPIO_WritePin(ONEWIRE_PORT, ONEWIRE_PIN, GPIO_PIN_SET);
-  GPIO_InitTypeDef gpio = {
-    .Pin = ONEWIRE_PIN,
-    .Mode = GPIO_MODE_OUTPUT_OD,
-    .Pull = GPIO_PULLUP,
-    .Speed = GPIO_SPEED_FREQ_VERY_HIGH,
-  };
-  HAL_GPIO_Init(ONEWIRE_PORT, &gpio);
+  Platform_GpioWrite(ONEWIRE_PORT, ONEWIRE_PIN, 1U);
+  Platform_GpioConfigure(ONEWIRE_PORT, ONEWIRE_PIN, 1U, 1U, 3U, 0U);
+  ONEWIRE_PORT->OTYPER |= 1UL << ONEWIRE_PIN;
   Delay_Init();
   oneWireMutex = xSemaphoreCreateMutexStatic(&oneWireMutexBuffer);
   return (oneWireMutex != NULL) ? SUCCESS : ERROR;
@@ -54,14 +49,14 @@ ErrorStatus OneWire_Init(void) {
 
 ErrorStatus OneWire_Reset(void) {
   uint32_t interruptMask = oneWire_InterruptLock();
-  HAL_GPIO_WritePin(ONEWIRE_PORT, ONEWIRE_PIN, GPIO_PIN_RESET);
+  Platform_GpioWrite(ONEWIRE_PORT, ONEWIRE_PIN, 0U);
   Delay_Microseconds(480U);
-  HAL_GPIO_WritePin(ONEWIRE_PORT, ONEWIRE_PIN, GPIO_PIN_SET);
+  Platform_GpioWrite(ONEWIRE_PORT, ONEWIRE_PIN, 1U);
   Delay_Microseconds(70U);
-  GPIO_PinState presence = HAL_GPIO_ReadPin(ONEWIRE_PORT, ONEWIRE_PIN);
+  uint8_t presence = Platform_GpioRead(ONEWIRE_PORT, ONEWIRE_PIN);
   Delay_Microseconds(410U);
   oneWire_InterruptUnlock(interruptMask);
-  return (presence == GPIO_PIN_RESET) ? SUCCESS : ERROR;
+  return (presence == 0U) ? SUCCESS : ERROR;
 }
 
 void OneWire_WriteByte(uint8_t value) {
@@ -73,12 +68,12 @@ void OneWire_WriteByte(uint8_t value) {
 
 uint8_t OneWire_ReadBit(void) {
   uint32_t interruptMask = oneWire_InterruptLock();
-  HAL_GPIO_WritePin(ONEWIRE_PORT, ONEWIRE_PIN, GPIO_PIN_RESET);
+  Platform_GpioWrite(ONEWIRE_PORT, ONEWIRE_PIN, 0U);
   Delay_Microseconds(6U);
-  HAL_GPIO_WritePin(ONEWIRE_PORT, ONEWIRE_PIN, GPIO_PIN_SET);
+  Platform_GpioWrite(ONEWIRE_PORT, ONEWIRE_PIN, 1U);
   Delay_Microseconds(9U);
   uint8_t value =
-    (HAL_GPIO_ReadPin(ONEWIRE_PORT, ONEWIRE_PIN) == GPIO_PIN_SET) ? 1U : 0U;
+    Platform_GpioRead(ONEWIRE_PORT, ONEWIRE_PIN);
   Delay_Microseconds(55U);
   oneWire_InterruptUnlock(interruptMask);
   return value;
@@ -185,13 +180,13 @@ ErrorStatus OneWire_ReadPowerSupply(
 }
 
 void OneWire_StrongPullupEnable(void) {
-  HAL_GPIO_WritePin(ONEWIRE_PORT, ONEWIRE_PIN, GPIO_PIN_SET);
-  CLEAR_BIT(ONEWIRE_PORT->OTYPER, ONEWIRE_PIN);
+  Platform_GpioWrite(ONEWIRE_PORT, ONEWIRE_PIN, 1U);
+  ONEWIRE_PORT->OTYPER &= ~(1UL << ONEWIRE_PIN);
 }
 
 void OneWire_StrongPullupDisable(void) {
-  HAL_GPIO_WritePin(ONEWIRE_PORT, ONEWIRE_PIN, GPIO_PIN_SET);
-  SET_BIT(ONEWIRE_PORT->OTYPER, ONEWIRE_PIN);
+  Platform_GpioWrite(ONEWIRE_PORT, ONEWIRE_PIN, 1U);
+  ONEWIRE_PORT->OTYPER |= 1UL << ONEWIRE_PIN;
 }
 
 BaseType_t OneWire_Lock(TickType_t timeout) {
@@ -215,9 +210,9 @@ OneWireDevice_TypeDef* OneWire_GetDevices(void) {
 
 static void oneWire_WriteBit(uint8_t value) {
   uint32_t interruptMask = oneWire_InterruptLock();
-  HAL_GPIO_WritePin(ONEWIRE_PORT, ONEWIRE_PIN, GPIO_PIN_RESET);
+  Platform_GpioWrite(ONEWIRE_PORT, ONEWIRE_PIN, 0U);
   Delay_Microseconds((value != 0U) ? 6U : 60U);
-  HAL_GPIO_WritePin(ONEWIRE_PORT, ONEWIRE_PIN, GPIO_PIN_SET);
+  Platform_GpioWrite(ONEWIRE_PORT, ONEWIRE_PIN, 1U);
   Delay_Microseconds((value != 0U) ? 64U : 10U);
   oneWire_InterruptUnlock(interruptMask);
 }

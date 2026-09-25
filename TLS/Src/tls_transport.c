@@ -246,8 +246,8 @@ TlsTransport_StatusTypeDef TlsTransport_Head(
 
   memset(result, 0, sizeof(*result));
   result->status = TLS_TRANSPORT_CONFIG_ERROR;
-  uint32_t started = HAL_GetTick();
-  if (TlsPlatform_Lock() != HAL_OK)
+  uint32_t started = Platform_GetTick();
+  if (TlsPlatform_Lock() != PLATFORM_STATUS_OK)
     return result->status;
 
   int socketDescriptor = -1;
@@ -388,7 +388,7 @@ cleanup:
   if ((detail != 0) && (socketContext.lastError != 0))
     detail = -socketContext.lastError;
   result->detail = detail;
-  result->elapsedMs = HAL_GetTick() - started;
+  result->elapsedMs = Platform_GetTick() - started;
   if (socketDescriptor >= 0) {
     (void)mbedtls_ssl_close_notify(&ssl);
     lwip_close(socketDescriptor);

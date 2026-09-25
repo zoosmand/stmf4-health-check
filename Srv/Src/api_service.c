@@ -474,10 +474,6 @@ static int apiService_TrustStoreError(
       return apiService_Error(
         ssl, 409, "Conflict", "trust_anchor_limit_reached"
       );
-    case TLS_TRUST_STORE_STATUS_FACTORY_PROTECTED:
-      return apiService_Error(
-        ssl, 403, "Forbidden", "factory_anchor_protected"
-      );
     default:
       return apiService_Error(
         ssl, 500, "Internal Server Error", "storage_error"
@@ -697,7 +693,7 @@ static int apiService_Dispatch(
       );
       username[sizeof(username) - 1U] = '\0';
       UserStore_RecordTypeDef existing;
-      if (UserStore_Find(username, &existing, NULL) != HAL_OK)
+      if (UserStore_Find(username, &existing, NULL) != PLATFORM_STATUS_OK)
         return apiService_Error(
           ssl, 404, "Not Found", "user_not_found"
         );
@@ -877,17 +873,17 @@ static int apiService_Dispatch(
       && (strcmp(request->path, "/api/v1/trust-anchors") == 0)) {
     if (principal.role != USER_ROLE_ADMINISTRATOR)
       return apiService_Error(ssl, 403, "Forbidden", "forbidden");
-    if (HealthCheckConfig_ResetTrustAnchors()
-        != HEALTH_CHECK_CONFIG_STATUS_OK) {
-      return apiService_Error(
-        ssl, 500, "Internal Server Error", "storage_error"
-      );
+    for (uint8_t id = 0U; id <= TLS_TRUST_STORE_MAX_PERSISTED; ++id) {
+      if (HealthCheckConfig_IsTrustAnchorInUse(id) != 0U)
+        return apiService_Error(
+          ssl, 409, "Conflict", "trust_anchor_in_use"
+        );
     }
     TlsTrustStore_StatusTypeDef status = TlsTrustStore_Reset();
     if (status != TLS_TRUST_STORE_STATUS_OK)
       return apiService_TrustStoreError(ssl, status);
     return apiService_Respond(
-      ssl, 200, "OK", "{\"factory_restored\":true}"
+      ssl, 200, "OK", "{\"trust_anchors_cleared\":true}"
     );
   }
 
@@ -914,10 +910,6 @@ static int apiService_Dispatch(
     }
     uint8_t id = (uint8_t)idValue;
     if (deletingTrustAnchor != 0U) {
-      if (id == TLS_TRUST_STORE_FACTORY_ID)
-        return apiService_TrustStoreError(
-          ssl, TLS_TRUST_STORE_STATUS_FACTORY_PROTECTED
-        );
       if (HealthCheckConfig_IsTrustAnchorInUse(id) != 0U)
         return apiService_Error(
           ssl, 409, "Conflict", "trust_anchor_in_use"
@@ -1019,7 +1011,7 @@ static int apiService_Dispatch(
     char host[HEALTH_CHECK_CONFIG_HOST_SIZE];
     char path[HEALTH_CHECK_CONFIG_PATH_SIZE];
     uint32_t portValue;
-    uint32_t trustAnchorValue = TLS_TRUST_STORE_FACTORY_ID;
+    uint32_t trustAnchorValue = TLS_TRUST_STORE_DEFAULT_ID;
     uint8_t enabled = 1U;
     if ((apiService_JsonString(
           request->body, "host", host, sizeof(host)
@@ -1348,7 +1340,7 @@ static void apiService_Task(void* argument) {
     (void)lwip_setsockopt(
       client, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)
     );
-    if (TlsPlatform_Lock() != HAL_OK) {
+    if (TlsPlatform_Lock() != PLATFORM_STATUS_OK) {
       lwip_close(client);
       continue;
     }
@@ -1460,7 +1452,7 @@ static void apiService_Task(void* argument) {
   }
 }
 
-HAL_StatusTypeDef ApiService_Init(void) {
+Platform_StatusTypeDef ApiService_Init(void) {
   return (xTaskCreateStatic(
     apiService_Task,
     "api",
@@ -1469,5 +1461,5 @@ HAL_StatusTypeDef ApiService_Init(void) {
     tskIDLE_PRIORITY + 1U,
     apiTaskStack,
     &apiTaskControlBlock
-  ) != NULL) ? HAL_OK : HAL_ERROR;
+  ) != NULL) ? PLATFORM_STATUS_OK : PLATFORM_STATUS_ERROR;
 }

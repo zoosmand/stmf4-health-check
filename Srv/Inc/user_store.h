@@ -35,14 +35,14 @@ typedef struct {
   uint32_t iterations;
 } UserStore_RecordTypeDef;
 
-HAL_StatusTypeDef UserStore_Init(void);
-HAL_StatusTypeDef UserStore_Find(
+Platform_StatusTypeDef UserStore_Init(void);
+Platform_StatusTypeDef UserStore_Find(
   const char* username,
   UserStore_RecordTypeDef* record,
   uint8_t* index
 );
-HAL_StatusTypeDef UserStore_Put(const UserStore_RecordTypeDef* record);
-HAL_StatusTypeDef UserStore_Delete(const char* username);
+Platform_StatusTypeDef UserStore_Put(const UserStore_RecordTypeDef* record);
+Platform_StatusTypeDef UserStore_Delete(const char* username);
 size_t UserStore_List(UserStore_RecordTypeDef* records, size_t capacity);
 
 #endif /* USER_STORE_H */

@@ -37,7 +37,7 @@ typedef enum {
   TLS_SERVER_CREDENTIALS_STATUS_STORAGE_ERROR
 } TlsServerCredentials_StatusTypeDef;
 
-HAL_StatusTypeDef TlsServerCredentials_Init(void);
+Platform_StatusTypeDef TlsServerCredentials_Init(void);
 
 /**
   * @brief Stage a DER certificate and activate it if a matching key is

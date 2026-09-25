@@ -42,7 +42,6 @@
 #define DEFAULT_TASK_PERIOD_MS   1000U
 #define NETWORK_TASK_PERIOD_MS   1U
 
-static IWDG_HandleTypeDef watchdog;
 static StaticTask_t defaultTaskControlBlock;
 static StackType_t defaultTaskStack[DEFAULT_TASK_STACK_DEPTH];
 static StaticTask_t networkTaskControlBlock;
@@ -96,18 +95,18 @@ Rtos_StatusTypeDef Rtos_Init(void) {
 static void rtos_StartupTask(void* argument) {
   (void)argument;
 
-  if (W25Q64_Init() != HAL_OK)
+  if (W25Q64_Init() != PLATFORM_STATUS_OK)
     Error_Handler();
   printf("W25Q64 flash ready.\r\n");
-  if ((TlsTrustStore_Init() != HAL_OK)
-      || (HealthCheckConfig_Init() != HAL_OK)
-      || (HealthCheckLog_Init() != HAL_OK)
-      || (TlsServerCredentials_Init() != HAL_OK)) {
+  if ((TlsTrustStore_Init() != PLATFORM_STATUS_OK)
+      || (HealthCheckConfig_Init() != PLATFORM_STATUS_OK)
+      || (HealthCheckLog_Init() != PLATFORM_STATUS_OK)
+      || (TlsServerCredentials_Init() != PLATFORM_STATUS_OK)) {
     Error_Handler();
   }
 
   if ((BuzzerService_Init() != SUCCESS)
-      || (ApiService_Init() != HAL_OK)
+      || (ApiService_Init() != PLATFORM_STATUS_OK)
       || (TemperatureService_Init() != SUCCESS)
       || (TimeService_Init() != SUCCESS)
       || (HealthCheckService_Init() != SUCCESS)) {
@@ -135,15 +134,16 @@ static void rtos_DefaultTask(void* argument) {
   (void)argument;
 
   printf("Default task: started.\r\n");
-  watchdog.Instance = IWDG;
-  watchdog.Init.Prescaler = IWDG_PRESCALER_256;
-  watchdog.Init.Reload = 4095U;
-  if (HAL_IWDG_Init(&watchdog) != HAL_OK)
-    Error_Handler();
+  IWDG->KR = 0x5555U;
+  IWDG->PR = 6U;
+  IWDG->RLR = 4095U;
+  while (IWDG->SR != 0U) {
+  }
+  IWDG->KR = 0xAAAAU;
+  IWDG->KR = 0xCCCCU;
 
   for (;;) {
-    if (HAL_IWDG_Refresh(&watchdog) != HAL_OK)
-      Error_Handler();
+    IWDG->KR = 0xAAAAU;
     vTaskDelay(pdMS_TO_TICKS(DEFAULT_TASK_PERIOD_MS));
   }
 }
@@ -152,7 +152,7 @@ static void rtos_NetworkTask(void* argument) {
   (void)argument;
 
   printf("Network task: started.\r\n");
-  if (TlsPlatform_Init() != HAL_OK)
+  if (TlsPlatform_Init() != PLATFORM_STATUS_OK)
     Error_Handler();
   printf("Network task: TLS platform ready.\r\n");
   if (Lwip_Init() != LWIP_STATUS_OK)

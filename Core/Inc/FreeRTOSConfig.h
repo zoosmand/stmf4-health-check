@@ -107,7 +107,7 @@
 
 /*
  * FreeRTOS supplies these exception handlers directly. SysTick is deliberately
- * not aliased: the application handler keeps HAL_IncTick() active and then
+ * not aliased: the application handler keeps Platform_IncrementTick() active and then
  * dispatches the kernel tick.
  */
 #define vPortSVCHandler                            SVC_Handler

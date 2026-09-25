@@ -70,7 +70,7 @@ static AuthService_StatusTypeDef authService_Derive(
   uint32_t iterations,
   uint8_t* verifier
 ) {
-  if (TlsPlatform_Lock() != HAL_OK)
+  if (TlsPlatform_Lock() != PLATFORM_STATUS_OK)
     return AUTH_SERVICE_STATUS_CRYPTO_ERROR;
   int result = mbedtls_pkcs5_pbkdf2_hmac_ext(
     MBEDTLS_MD_SHA256,
@@ -101,7 +101,7 @@ static void authService_Hex(
   output[length * 2U] = '\0';
 }
 
-static HAL_StatusTypeDef authService_HashToken(
+static Platform_StatusTypeDef authService_HashToken(
   const char* token,
   uint8_t digest[32]
 ) {
@@ -110,7 +110,7 @@ static HAL_StatusTypeDef authService_HashToken(
     strlen(token),
     digest,
     0
-  ) == 0) ? HAL_OK : HAL_ERROR;
+  ) == 0) ? PLATFORM_STATUS_OK : PLATFORM_STATUS_ERROR;
 }
 
 static AuthService_SessionTypeDef* authService_FindSession(
@@ -137,16 +137,16 @@ static AuthService_StatusTypeDef authService_Issue(
   uint8_t refresh[AUTH_SERVICE_TOKEN_BYTES];
   uint8_t accessDigest[32];
   uint8_t refreshDigest[32];
-  if ((TlsPlatform_Random(access, sizeof(access)) != HAL_OK)
-      || (TlsPlatform_Random(refresh, sizeof(refresh)) != HAL_OK)) {
+  if ((TlsPlatform_Random(access, sizeof(access)) != PLATFORM_STATUS_OK)
+      || (TlsPlatform_Random(refresh, sizeof(refresh)) != PLATFORM_STATUS_OK)) {
     return AUTH_SERVICE_STATUS_CRYPTO_ERROR;
   }
   authService_Hex(access, sizeof(access), tokens->accessToken);
   authService_Hex(refresh, sizeof(refresh), tokens->refreshToken);
   mbedtls_platform_zeroize(access, sizeof(access));
   mbedtls_platform_zeroize(refresh, sizeof(refresh));
-  if ((authService_HashToken(tokens->accessToken, accessDigest) != HAL_OK)
-      || (authService_HashToken(tokens->refreshToken, refreshDigest) != HAL_OK)) {
+  if ((authService_HashToken(tokens->accessToken, accessDigest) != PLATFORM_STATUS_OK)
+      || (authService_HashToken(tokens->refreshToken, refreshDigest) != PLATFORM_STATUS_OK)) {
     mbedtls_platform_zeroize(tokens, sizeof(*tokens));
     return AUTH_SERVICE_STATUS_CRYPTO_ERROR;
   }
@@ -166,7 +166,7 @@ static AuthService_StatusTypeDef authService_Issue(
   );
   memcpy(session->accessDigest, accessDigest, sizeof(accessDigest));
   memcpy(session->refreshDigest, refreshDigest, sizeof(refreshDigest));
-  session->accessIssuedAt = HAL_GetTick();
+  session->accessIssuedAt = Platform_GetTick();
   session->refreshIssuedAt = session->accessIssuedAt;
   tokens->accessExpiresIn = AUTH_SERVICE_ACCESS_LIFETIME_SEC;
   tokens->refreshExpiresIn = AUTH_SERVICE_REFRESH_LIFETIME_SEC;
@@ -177,7 +177,7 @@ static AuthService_StatusTypeDef authService_Issue(
 
 AuthService_StatusTypeDef AuthService_Init(void) {
   sessionMutex = xSemaphoreCreateMutexStatic(&sessionMutexControlBlock);
-  if ((sessionMutex == NULL) || (UserStore_Init() != HAL_OK))
+  if ((sessionMutex == NULL) || (UserStore_Init() != PLATFORM_STATUS_OK))
     return AUTH_SERVICE_STATUS_STORAGE_ERROR;
   memset(sessions, 0, sizeof(sessions));
   return AUTH_SERVICE_STATUS_OK;
@@ -227,7 +227,7 @@ AuthService_StatusTypeDef AuthService_Login(
     status = AuthService_VerifyMasterPassword(password, passwordLength);
   } else {
     UserStore_RecordTypeDef record;
-    if ((UserStore_Find(username, &record, NULL) != HAL_OK)
+    if ((UserStore_Find(username, &record, NULL) != PLATFORM_STATUS_OK)
         || (record.enabled == 0U)) {
       return AUTH_SERVICE_STATUS_INVALID_PASSWORD;
     }
@@ -270,12 +270,12 @@ AuthService_StatusTypeDef AuthService_Refresh(
     return AUTH_SERVICE_STATUS_INVALID_ARGUMENT;
   }
   uint8_t digest[32];
-  if (authService_HashToken(refreshToken, digest) != HAL_OK)
+  if (authService_HashToken(refreshToken, digest) != PLATFORM_STATUS_OK)
     return AUTH_SERVICE_STATUS_CRYPTO_ERROR;
   if (xSemaphoreTake(sessionMutex, portMAX_DELAY) != pdTRUE)
     return AUTH_SERVICE_STATUS_CRYPTO_ERROR;
   AuthService_StatusTypeDef status = AUTH_SERVICE_STATUS_INVALID_PASSWORD;
-  uint32_t now = HAL_GetTick();
+  uint32_t now = Platform_GetTick();
   for (size_t index = 0U; index < AUTH_SERVICE_SESSION_COUNT; ++index) {
     AuthService_SessionTypeDef* session = &sessions[index];
     if ((session->active != 0U)
@@ -310,12 +310,12 @@ AuthService_StatusTypeDef AuthService_Authorize(
     return AUTH_SERVICE_STATUS_INVALID_ARGUMENT;
   }
   uint8_t digest[32];
-  if (authService_HashToken(accessToken, digest) != HAL_OK)
+  if (authService_HashToken(accessToken, digest) != PLATFORM_STATUS_OK)
     return AUTH_SERVICE_STATUS_CRYPTO_ERROR;
   if (xSemaphoreTake(sessionMutex, portMAX_DELAY) != pdTRUE)
     return AUTH_SERVICE_STATUS_CRYPTO_ERROR;
   AuthService_StatusTypeDef status = AUTH_SERVICE_STATUS_INVALID_PASSWORD;
-  uint32_t now = HAL_GetTick();
+  uint32_t now = Platform_GetTick();
   for (size_t index = 0U; index < AUTH_SERVICE_SESSION_COUNT; ++index) {
     AuthService_SessionTypeDef* session = &sessions[index];
     if ((session->active != 0U)
@@ -377,7 +377,7 @@ AuthService_StatusTypeDef AuthService_PutUser(
     return AUTH_SERVICE_STATUS_FORBIDDEN;
   }
   UserStore_RecordTypeDef record;
-  uint8_t exists = (UserStore_Find(username, &record, NULL) == HAL_OK);
+  uint8_t exists = (UserStore_Find(username, &record, NULL) == PLATFORM_STATUS_OK);
   if ((mustExist != 0U) && (exists == 0U))
     return AUTH_SERVICE_STATUS_NOT_FOUND;
   if ((mustExist == 0U) && (exists != 0U))
@@ -387,7 +387,7 @@ AuthService_StatusTypeDef AuthService_PutUser(
   record.role = (uint8_t)role;
   record.iterations = AUTH_SERVICE_USER_ITERATIONS;
   (void)strncpy(record.username, username, sizeof(record.username) - 1U);
-  if (TlsPlatform_Random(record.salt, sizeof(record.salt)) != HAL_OK)
+  if (TlsPlatform_Random(record.salt, sizeof(record.salt)) != PLATFORM_STATUS_OK)
     return AUTH_SERVICE_STATUS_CRYPTO_ERROR;
   AuthService_StatusTypeDef status = authService_Derive(
     password,
@@ -398,7 +398,7 @@ AuthService_StatusTypeDef AuthService_PutUser(
   );
   if (status != AUTH_SERVICE_STATUS_OK)
     return status;
-  status = (UserStore_Put(&record) == HAL_OK)
+  status = (UserStore_Put(&record) == PLATFORM_STATUS_OK)
     ? AUTH_SERVICE_STATUS_OK
     : AUTH_SERVICE_STATUS_STORAGE_ERROR;
   if ((status == AUTH_SERVICE_STATUS_OK)
@@ -424,9 +424,9 @@ AuthService_StatusTypeDef AuthService_DeleteUser(
     return AUTH_SERVICE_STATUS_FORBIDDEN;
   }
   UserStore_RecordTypeDef record;
-  if (UserStore_Find(username, &record, NULL) != HAL_OK)
+  if (UserStore_Find(username, &record, NULL) != PLATFORM_STATUS_OK)
     return AUTH_SERVICE_STATUS_NOT_FOUND;
-  if (UserStore_Delete(username) != HAL_OK)
+  if (UserStore_Delete(username) != PLATFORM_STATUS_OK)
     return AUTH_SERVICE_STATUS_STORAGE_ERROR;
   if (xSemaphoreTake(sessionMutex, portMAX_DELAY) == pdTRUE) {
     AuthService_SessionTypeDef* session = authService_FindSession(username);

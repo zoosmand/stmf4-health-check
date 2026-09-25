@@ -2,7 +2,7 @@
 
 This document defines the preferred naming style for project-owned STM32F407
 health-check firmware in `Core`, `Srv`, `LWIP/App`, `LWIP/Target`, and `TLS`.
-Imported FreeRTOS, CMSIS, STM32 HAL, DP83848, lwIP, and Mbed TLS code keeps its
+Imported FreeRTOS, CMSIS, DP83848, lwIP, and Mbed TLS code keeps its
 upstream style.
 
 The conventions describe the target style. Existing names are changed only in
@@ -111,8 +111,8 @@ Structure documentation lists the purpose and meaning of every member:
 ## Compatibility notes
 
 Project-owned adapters may expose conventional names around imported APIs, but
-they must not rewrite vendor interfaces. STM32 HAL callbacks and handles,
-FreeRTOS types, lwIP callbacks, Mbed TLS APIs, CMSIS symbols, and linker/startup
+they must not rewrite vendor interfaces. FreeRTOS types, lwIP callbacks,
+Mbed TLS APIs, CMSIS symbols, and linker/startup
 symbols retain their required upstream spelling.
 
 Names tied to a peripheral register, protocol field, certificate property, or

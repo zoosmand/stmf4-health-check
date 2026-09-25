@@ -24,8 +24,56 @@
 #define RTC_SECONDS_PER_DAY    86400UL
 #define RTC_UNIX_YEAR_2000     946684800UL
 #define RTC_UNIX_YEAR_2100     4102444800UL
+#define RTC_REGISTER_TIMEOUT_MS 1000U
 
-static RTC_HandleTypeDef rtc;
+static uint8_t rtc_ToBcd(uint8_t value) {
+  return (uint8_t)(((value / 10U) << 4U) | (value % 10U));
+}
+
+static uint8_t rtc_FromBcd(uint8_t value) {
+  return (uint8_t)(((value >> 4U) * 10U) + (value & 0x0FU));
+}
+
+static void rtc_Unlock(void) {
+  RTC->WPR = 0xCAU;
+  RTC->WPR = 0x53U;
+}
+
+static void rtc_Lock(void) {
+  RTC->WPR = 0xFFU;
+}
+
+static Platform_StatusTypeDef rtc_WaitForFlag(
+  uint32_t flag,
+  uint8_t expectedSet
+) {
+  uint32_t started = Platform_GetTick();
+  while (((RTC->ISR & flag) != 0U) != (expectedSet != 0U)) {
+    if ((Platform_GetTick() - started) >= RTC_REGISTER_TIMEOUT_MS)
+      return PLATFORM_STATUS_TIMEOUT;
+  }
+  return PLATFORM_STATUS_OK;
+}
+
+static Platform_StatusTypeDef rtc_WaitForLse(void) {
+  uint32_t started = Platform_GetTick();
+  while ((RCC->BDCR & RCC_BDCR_LSERDY) == 0U) {
+    if ((Platform_GetTick() - started) >= RTC_REGISTER_TIMEOUT_MS)
+      return PLATFORM_STATUS_TIMEOUT;
+  }
+  return PLATFORM_STATUS_OK;
+}
+
+static Platform_StatusTypeDef rtc_EnterInitMode(void) {
+  RTC->ISR |= RTC_ISR_INIT;
+  return rtc_WaitForFlag(RTC_ISR_INITF, 1U);
+}
+
+static Platform_StatusTypeDef rtc_LeaveInitMode(void) {
+  RTC->ISR &= ~RTC_ISR_INIT;
+  RTC->ISR &= ~RTC_ISR_RSF;
+  return rtc_WaitForFlag(RTC_ISR_RSF, 1U);
+}
 
 static uint8_t rtc_IsLeapYear(uint16_t year) {
   return ((year % 4U) == 0U)
@@ -42,21 +90,34 @@ static uint8_t rtc_DaysInMonth(uint16_t year, uint8_t month) {
   return days[month - 1U];
 }
 
-HAL_StatusTypeDef Rtc_Init(void) {
-  rtc.Instance = RTC;
-  rtc.Init.HourFormat = RTC_HOURFORMAT_24;
-  rtc.Init.AsynchPrediv = 127U;
-  rtc.Init.SynchPrediv = 255U;
-  rtc.Init.OutPut = RTC_OUTPUT_DISABLE;
-  rtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
-  rtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
-  return HAL_RTC_Init(&rtc);
+Platform_StatusTypeDef Rtc_Init(void) {
+  uint32_t selectedClock = RCC->BDCR & RCC_BDCR_RTCSEL;
+  if ((selectedClock != 0U) && (selectedClock != RCC_BDCR_RTCSEL_0)) {
+    RCC->BDCR |= RCC_BDCR_BDRST;
+    RCC->BDCR &= ~RCC_BDCR_BDRST;
+    RCC->BDCR |= RCC_BDCR_LSEON;
+    if (rtc_WaitForLse() != PLATFORM_STATUS_OK)
+      return PLATFORM_STATUS_TIMEOUT;
+  }
+  RCC->BDCR = (RCC->BDCR & ~RCC_BDCR_RTCSEL) | RCC_BDCR_RTCSEL_0;
+  RCC->BDCR |= RCC_BDCR_RTCEN;
+  rtc_Unlock();
+  if (rtc_EnterInitMode() != PLATFORM_STATUS_OK) {
+    rtc_Lock();
+    return PLATFORM_STATUS_TIMEOUT;
+  }
+  RTC->CR &= ~(RTC_CR_FMT | RTC_CR_OSEL);
+  RTC->PRER = 255U;
+  RTC->PRER |= 127U << RTC_PRER_PREDIV_A_Pos;
+  Platform_StatusTypeDef status = rtc_LeaveInitMode();
+  rtc_Lock();
+  return status;
 }
 
-HAL_StatusTypeDef Rtc_SetUnixTime(uint32_t unixTime) {
+Platform_StatusTypeDef Rtc_SetUnixTime(uint32_t unixTime) {
   if ((unixTime < RTC_UNIX_YEAR_2000)
       || (unixTime >= RTC_UNIX_YEAR_2100))
-    return HAL_ERROR;
+    return PLATFORM_STATUS_ERROR;
 
   uint32_t days = unixTime / RTC_SECONDS_PER_DAY;
   uint32_t seconds = unixTime % RTC_SECONDS_PER_DAY;
@@ -73,56 +134,65 @@ HAL_StatusTypeDef Rtc_SetUnixTime(uint32_t unixTime) {
     ++month;
   }
 
-  RTC_TimeTypeDef time = {
-    .Hours = (uint8_t)(seconds / 3600UL),
-    .Minutes = (uint8_t)((seconds % 3600UL) / 60UL),
-    .Seconds = (uint8_t)(seconds % 60UL),
-    .DayLightSaving = RTC_DAYLIGHTSAVING_NONE,
-    .StoreOperation = RTC_STOREOPERATION_RESET,
-  };
-  RTC_DateTypeDef date = {
-    .WeekDay = (uint8_t)(((unixTime / RTC_SECONDS_PER_DAY) + 3UL) % 7UL + 1UL),
-    .Month = month,
-    .Date = (uint8_t)(days + 1UL),
-    .Year = (uint8_t)(year - 2000U),
-  };
-
-  if (HAL_RTC_SetTime(&rtc, &time, RTC_FORMAT_BIN) != HAL_OK)
-    return HAL_ERROR;
-  if (HAL_RTC_SetDate(&rtc, &date, RTC_FORMAT_BIN) != HAL_OK)
-    return HAL_ERROR;
-
-  HAL_RTCEx_BKUPWrite(&rtc, RTC_BKP_DR0, RTC_SYNC_MARKER);
-  return HAL_OK;
+  uint8_t hours = (uint8_t)(seconds / 3600UL);
+  uint8_t minutes = (uint8_t)((seconds % 3600UL) / 60UL);
+  uint8_t secondsValue = (uint8_t)(seconds % 60UL);
+  uint8_t weekday = (uint8_t)(
+    ((unixTime / RTC_SECONDS_PER_DAY) + 3UL) % 7UL + 1UL
+  );
+  rtc_Unlock();
+  if (rtc_EnterInitMode() != PLATFORM_STATUS_OK) {
+    rtc_Lock();
+    return PLATFORM_STATUS_TIMEOUT;
+  }
+  RTC->TR = ((uint32_t)rtc_ToBcd(hours) << RTC_TR_HU_Pos)
+    | ((uint32_t)rtc_ToBcd(minutes) << RTC_TR_MNU_Pos)
+    | ((uint32_t)rtc_ToBcd(secondsValue) << RTC_TR_SU_Pos);
+  RTC->DR = ((uint32_t)rtc_ToBcd((uint8_t)(year - 2000U)) << RTC_DR_YU_Pos)
+    | ((uint32_t)weekday << RTC_DR_WDU_Pos)
+    | ((uint32_t)rtc_ToBcd(month) << RTC_DR_MU_Pos)
+    | ((uint32_t)rtc_ToBcd((uint8_t)(days + 1UL)) << RTC_DR_DU_Pos);
+  Platform_StatusTypeDef status = rtc_LeaveInitMode();
+  rtc_Lock();
+  if (status != PLATFORM_STATUS_OK)
+    return status;
+  RTC->BKP0R = RTC_SYNC_MARKER;
+  return PLATFORM_STATUS_OK;
 }
 
-HAL_StatusTypeDef Rtc_GetDateTime(Rtc_DateTimeTypeDef* dateTime) {
+Platform_StatusTypeDef Rtc_GetDateTime(Rtc_DateTimeTypeDef* dateTime) {
   if (dateTime == NULL)
-    return HAL_ERROR;
+    return PLATFORM_STATUS_ERROR;
 
-  RTC_TimeTypeDef time;
-  RTC_DateTypeDef date;
-  if (HAL_RTC_GetTime(&rtc, &time, RTC_FORMAT_BIN) != HAL_OK)
-    return HAL_ERROR;
-  if (HAL_RTC_GetDate(&rtc, &date, RTC_FORMAT_BIN) != HAL_OK)
-    return HAL_ERROR;
-
-  dateTime->year = 2000U + date.Year;
-  dateTime->month = date.Month;
-  dateTime->day = date.Date;
-  dateTime->hour = time.Hours;
-  dateTime->minute = time.Minutes;
-  dateTime->second = time.Seconds;
-  return HAL_OK;
+  (void)RTC->SSR;
+  uint32_t time = RTC->TR;
+  uint32_t date = RTC->DR;
+  dateTime->year = 2000U + rtc_FromBcd((uint8_t)(date >> RTC_DR_YU_Pos));
+  dateTime->month = rtc_FromBcd((uint8_t)(
+    (date & (RTC_DR_MT | RTC_DR_MU)) >> RTC_DR_MU_Pos
+  ));
+  dateTime->day = rtc_FromBcd((uint8_t)(
+    (date & (RTC_DR_DT | RTC_DR_DU)) >> RTC_DR_DU_Pos
+  ));
+  dateTime->hour = rtc_FromBcd((uint8_t)(
+    (time & (RTC_TR_HT | RTC_TR_HU)) >> RTC_TR_HU_Pos
+  ));
+  dateTime->minute = rtc_FromBcd((uint8_t)(
+    (time & (RTC_TR_MNT | RTC_TR_MNU)) >> RTC_TR_MNU_Pos
+  ));
+  dateTime->second = rtc_FromBcd((uint8_t)(
+    (time & (RTC_TR_ST | RTC_TR_SU)) >> RTC_TR_SU_Pos
+  ));
+  return PLATFORM_STATUS_OK;
 }
 
-HAL_StatusTypeDef Rtc_GetUnixTime(uint32_t* unixTime) {
+Platform_StatusTypeDef Rtc_GetUnixTime(uint32_t* unixTime) {
   if (unixTime == NULL)
-    return HAL_ERROR;
+    return PLATFORM_STATUS_ERROR;
 
   Rtc_DateTimeTypeDef dateTime;
-  if (Rtc_GetDateTime(&dateTime) != HAL_OK)
-    return HAL_ERROR;
+  if (Rtc_GetDateTime(&dateTime) != PLATFORM_STATUS_OK)
+    return PLATFORM_STATUS_ERROR;
 
   uint32_t days = 0U;
   for (uint16_t year = 1970U; year < dateTime.year; ++year)
@@ -135,9 +205,9 @@ HAL_StatusTypeDef Rtc_GetUnixTime(uint32_t* unixTime) {
     + ((uint32_t)dateTime.hour * 3600UL)
     + ((uint32_t)dateTime.minute * 60UL)
     + dateTime.second;
-  return HAL_OK;
+  return PLATFORM_STATUS_OK;
 }
 
 uint8_t Rtc_IsSynchronized(void) {
-  return HAL_RTCEx_BKUPRead(&rtc, RTC_BKP_DR0) == RTC_SYNC_MARKER;
+  return RTC->BKP0R == RTC_SYNC_MARKER;
 }

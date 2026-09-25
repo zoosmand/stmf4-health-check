@@ -13,6 +13,6 @@
 
 #include "main.h"
 
-HAL_StatusTypeDef ApiService_Init(void);
+Platform_StatusTypeDef ApiService_Init(void);
 
 #endif /* API_SERVICE_H */

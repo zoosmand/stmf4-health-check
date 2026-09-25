@@ -35,10 +35,10 @@ typedef struct {
   uint8_t second;
 } Rtc_DateTimeTypeDef;
 
-HAL_StatusTypeDef Rtc_Init(void);
-HAL_StatusTypeDef Rtc_SetUnixTime(uint32_t unixTime);
-HAL_StatusTypeDef Rtc_GetUnixTime(uint32_t* unixTime);
-HAL_StatusTypeDef Rtc_GetDateTime(Rtc_DateTimeTypeDef* dateTime);
+Platform_StatusTypeDef Rtc_Init(void);
+Platform_StatusTypeDef Rtc_SetUnixTime(uint32_t unixTime);
+Platform_StatusTypeDef Rtc_GetUnixTime(uint32_t* unixTime);
+Platform_StatusTypeDef Rtc_GetDateTime(Rtc_DateTimeTypeDef* dateTime);
 uint8_t Rtc_IsSynchronized(void);
 
 #endif /* RTC_H */

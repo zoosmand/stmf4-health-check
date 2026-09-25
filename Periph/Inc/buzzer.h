@@ -24,12 +24,12 @@
 #include "main.h"
 
 /** @brief Configure PA8 as TIM1 channel 1 PWM, initially silent. */
-HAL_StatusTypeDef Buzzer_Init(void);
+Platform_StatusTypeDef Buzzer_Init(void);
 
 /** @brief Start the configured audible PWM tone. */
-HAL_StatusTypeDef Buzzer_Start(void);
+Platform_StatusTypeDef Buzzer_Start(void);
 
 /** @brief Stop PWM and leave the buzzer inactive. */
-HAL_StatusTypeDef Buzzer_Stop(void);
+Platform_StatusTypeDef Buzzer_Stop(void);
 
 #endif /* BUZZER_H */

@@ -104,7 +104,7 @@ static uint8_t tlsServerCredentials_IsValid(
     : 0U;
 }
 
-static HAL_StatusTypeDef tlsServerCredentials_Save(
+static Platform_StatusTypeDef tlsServerCredentials_Save(
   TlsServerCredentials_SnapshotTypeDef* candidate
 ) {
   uint32_t target = (activeAddress == TLS_SERVER_CREDENTIALS_SECTOR_A)
@@ -116,17 +116,17 @@ static HAL_StatusTypeDef tlsServerCredentials_Save(
   candidate->crc = tlsServerCredentials_Crc(
     candidate, offsetof(TlsServerCredentials_SnapshotTypeDef, crc)
   );
-  if ((W25Q64_EraseSector(target) != HAL_OK)
-      || (W25Q64_Program(target, candidate, sizeof(*candidate)) != HAL_OK))
-    return HAL_ERROR;
-  if ((W25Q64_Read(target, &verification, sizeof(verification)) != HAL_OK)
+  if ((W25Q64_EraseSector(target) != PLATFORM_STATUS_OK)
+      || (W25Q64_Program(target, candidate, sizeof(*candidate)) != PLATFORM_STATUS_OK))
+    return PLATFORM_STATUS_ERROR;
+  if ((W25Q64_Read(target, &verification, sizeof(verification)) != PLATFORM_STATUS_OK)
       || (tlsServerCredentials_IsValid(&verification) == 0U)
       || (verification.generation != candidate->generation))
-    return HAL_ERROR;
+    return PLATFORM_STATUS_ERROR;
   snapshot = *candidate;
   activeAddress = target;
   hasValidSnapshot = 1U;
-  return HAL_OK;
+  return PLATFORM_STATUS_OK;
 }
 
 /**
@@ -216,21 +216,21 @@ static TlsServerCredentials_StatusTypeDef tlsServerCredentials_TryActivate(
   memset(candidate.key, 0, sizeof(candidate.key));
   memcpy(candidate.key, keyData, keyLength);
   TlsServerCredentials_StatusTypeDef status =
-    (tlsServerCredentials_Save(&candidate) == HAL_OK)
+    (tlsServerCredentials_Save(&candidate) == PLATFORM_STATUS_OK)
     ? TLS_SERVER_CREDENTIALS_STATUS_ACTIVATED
     : TLS_SERVER_CREDENTIALS_STATUS_STORAGE_ERROR;
   tlsServerCredentials_ClearStaging();
   return status;
 }
 
-HAL_StatusTypeDef TlsServerCredentials_Init(void) {
+Platform_StatusTypeDef TlsServerCredentials_Init(void) {
   /* Reuse the persistent working snapshots to keep startup RAM bounded. */
   uint8_t firstValid = (W25Q64_Read(
     TLS_SERVER_CREDENTIALS_SECTOR_A, &snapshot, sizeof(snapshot)
-  ) == HAL_OK) && tlsServerCredentials_IsValid(&snapshot);
+  ) == PLATFORM_STATUS_OK) && tlsServerCredentials_IsValid(&snapshot);
   uint8_t secondValid = (W25Q64_Read(
     TLS_SERVER_CREDENTIALS_SECTOR_B, &verification, sizeof(verification)
-  ) == HAL_OK) && tlsServerCredentials_IsValid(&verification);
+  ) == PLATFORM_STATUS_OK) && tlsServerCredentials_IsValid(&verification);
   if ((firstValid != 0U)
       && ((secondValid == 0U)
         || (snapshot.generation >= verification.generation))) {
@@ -245,7 +245,7 @@ HAL_StatusTypeDef TlsServerCredentials_Init(void) {
     activeAddress = TLS_SERVER_CREDENTIALS_SECTOR_B;
     hasValidSnapshot = 0U;
   }
-  return HAL_OK;
+  return PLATFORM_STATUS_OK;
 }
 
 TlsServerCredentials_StatusTypeDef TlsServerCredentials_StageCertificate(
@@ -255,7 +255,7 @@ TlsServerCredentials_StatusTypeDef TlsServerCredentials_StageCertificate(
   if ((der == NULL) || (length == 0U)
       || (length > TLS_SERVER_CREDENTIALS_MAX_CERTIFICATE_SIZE))
     return TLS_SERVER_CREDENTIALS_STATUS_INVALID_DATA;
-  if (TlsPlatform_Lock() != HAL_OK)
+  if (TlsPlatform_Lock() != PLATFORM_STATUS_OK)
     return TLS_SERVER_CREDENTIALS_STATUS_STORAGE_ERROR;
   memcpy(pendingCertificate, der, length);
   pendingCertificateLength = length;
@@ -272,7 +272,7 @@ TlsServerCredentials_StatusTypeDef TlsServerCredentials_StagePrivateKey(
   if ((der == NULL) || (length == 0U)
       || (length > TLS_SERVER_CREDENTIALS_MAX_KEY_SIZE))
     return TLS_SERVER_CREDENTIALS_STATUS_INVALID_DATA;
-  if (TlsPlatform_Lock() != HAL_OK)
+  if (TlsPlatform_Lock() != PLATFORM_STATUS_OK)
     return TLS_SERVER_CREDENTIALS_STATUS_STORAGE_ERROR;
   memcpy(pendingKey, der, length);
   pendingKeyLength = length;

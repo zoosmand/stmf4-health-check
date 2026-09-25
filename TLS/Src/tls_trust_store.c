@@ -34,7 +34,8 @@
 #include <string.h>
 
 #define TLS_TRUST_STORE_MAGIC   0x54525354UL
-#define TLS_TRUST_STORE_VERSION 1U
+#define TLS_TRUST_STORE_VERSION 2U
+#define TLS_TRUST_STORE_LEGACY_VERSION 1U
 
 typedef struct {
   uint8_t occupied;
@@ -49,9 +50,18 @@ typedef struct {
   uint16_t version;
   uint16_t reserved;
   uint32_t generation;
-  TlsTrustStore_AnchorTypeDef anchors[TLS_TRUST_STORE_MAX_PERSISTED];
+  TlsTrustStore_AnchorTypeDef anchors[TLS_TRUST_STORE_MAX_ANCHORS];
   uint32_t crc;
 } TlsTrustStore_SnapshotTypeDef;
+
+typedef struct {
+  uint32_t magic;
+  uint16_t version;
+  uint16_t reserved;
+  uint32_t generation;
+  TlsTrustStore_AnchorTypeDef anchors[3U];
+  uint32_t crc;
+} TlsTrustStore_LegacySnapshotTypeDef;
 
 _Static_assert(
   sizeof(TlsTrustStore_SnapshotTypeDef)
@@ -60,50 +70,51 @@ _Static_assert(
 );
 
 static TlsTrustStore_SnapshotTypeDef trustStoreSnapshot;
-static TlsTrustStore_SnapshotTypeDef trustStoreCandidate;
 static uint32_t trustStoreActiveAddress;
 static StaticSemaphore_t trustStoreMutexControlBlock;
 static SemaphoreHandle_t trustStoreMutex;
 
-static const char tlsTrustStore_FactorySubject[] =
-  "CN=USERTrust RSA Certification Authority,O=The USERTRUST Network";
-
-/* USERTrust RSA Certification Authority, valid until 18 January 2038. */
-const char tlsTrustStore_UserTrustRsa[] =
+static const char tlsTrustStore_DefaultPem[] =
   "-----BEGIN CERTIFICATE-----\n"
-  "MIIF3jCCA8agAwIBAgIQAf1tMPyjylGoG7xkDjUDLTANBgkqhkiG9w0BAQwFADCB\n"
-  "iDELMAkGA1UEBhMCVVMxEzARBgNVBAgTCk5ldyBKZXJzZXkxFDASBgNVBAcTC0pl\n"
-  "cnNleSBDaXR5MR4wHAYDVQQKExVUaGUgVVNFUlRSVVNUIE5ldHdvcmsxLjAsBgNV\n"
-  "BAMTJVVTRVJUcnVzdCBSU0EgQ2VydGlmaWNhdGlvbiBBdXRob3JpdHkwHhcNMTAw\n"
-  "MjAxMDAwMDAwWhcNMzgwMTE4MjM1OTU5WjCBiDELMAkGA1UEBhMCVVMxEzARBgNV\n"
-  "BAgTCk5ldyBKZXJzZXkxFDASBgNVBAcTC0plcnNleSBDaXR5MR4wHAYDVQQKExVU\n"
-  "aGUgVVNFUlRSVVNUIE5ldHdvcmsxLjAsBgNVBAMTJVVTRVJUcnVzdCBSU0EgQ2Vy\n"
-  "dGlmaWNhdGlvbiBBdXRob3JpdHkwggIiMA0GCSqGSIb3DQEBAQUAA4ICDwAwggIK\n"
-  "AoICAQCAEmUXNg7D2wiz0KxXDXbtzSfTTK1Qg2HiqiBNCS1kCdzOiZ/MPans9s/B\n"
-  "3PHTsdZ7NygRK0faOca8Ohm0X6a9fZ2jY0K2dvKpOyuR+OJv0OwWIJAJPuLodMkY\n"
-  "tJHUYmTbf6MG8YgYapAiPLz+E/CHFHv25B+O1ORRxhFnRghRy4YUVD+8M/5+bJz/\n"
-  "Fp0YvVGONaanZshyZ9shZrHUm3gDwFA66Mzw3LyeTP6vBZY1H1dat//O+T23LLb2\n"
-  "VN3I5xI6Ta5MirdcmrS3ID3KfyI0rn47aGYBROcBTkZTmzNg95S+UzeQc0PzMsNT\n"
-  "79uq/nROacdrjGCT3sTHDN/hMq7MkztReJVni+49Vv4M0GkPGw/zJSZrM233bkf6\n"
-  "c0Plfg6lZrEpfDKEY1WJxA3Bk1QwGROs0303p+tdOmw1XNtB1xLaqUkL39iAigmT\n"
-  "Yo61Zs8liM2EuLE/pDkP2QKe6xJMlXzzawWpXhaDzLhn4ugTncxbgtNMs+1b/97l\n"
-  "c6wjOy0AvzVVdAlJ2ElYGn+SNuZRkg7zJn0cTRe8yexDJtC/QV9AqURE9JnnV4ee\n"
-  "UB9XVKg+/XRjL7FQZQnmWEIuQxpMtPAlR1n6BB6T1CZGSlCBst6+eLf8ZxXhyVeE\n"
-  "Hg9j1uliutZfVS7qXMYoCAQlObgOK6nyTJccBz8NUvXt7y+CDwIDAQABo0IwQDAd\n"
-  "BgNVHQ4EFgQUU3m/WqorSs9UgOHYm8Cd8rIDZsswDgYDVR0PAQH/BAQDAgEGMA8G\n"
-  "A1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQEMBQADggIBAFzUfA3P9wF9QZllDHPF\n"
-  "Up/L+M+ZBn8b2kMVn54CVVeWFPFSPCeHlCjtHzoBN6J2/FNQwISbxmtOuowhT6KO\n"
-  "VWKR82kV2LyI48SqC/3vqOlLVSoGIG1VeCkZ7l8wXEskEVX/JJpuXior7gtNn3/3\n"
-  "ATiUFJVDBwn7YKnuHKsSjKCaXqeYalltiz8I+8jRRa8YFWSQEg9zKC7F4iRO/Fjs\n"
-  "8PRF/iKz6y+O0tlFYQXBl2+odnKPi4w2r78NBc5xjeambx9spnFixdjQg3IM8WcR\n"
-  "iQycE0xyNN+81XHfqnHd4blsjDwSXWXavVcStkNr/+XeTWYRUc+ZruwXtuhxkYze\n"
-  "Sf7dNXGiFSeUHM9h4ya7b6NnJSFd5t0dCy5oGzuCr+yDZ4XUmFF0sbmZgIn/f3gZ\n"
-  "XHlKYC6SQK5MNyosycdiyA5d9zZbyuAlJQG03RoHnHcAP9Dc1ew91Pq7P8yF1m9/\n"
-  "qS3fuQL39ZeatTXaw2ewh0qpKJ4jjv9cJ2vhsE/zB+4ALtRZh8tSQZXq9EfX7mRB\n"
-  "VXyNWQKV3WKdwrnuWih0hKWbt5DHDAff9Yk2dDLWKMGwsAvgnEzDHNb842m1R0aB\n"
-  "L6KCq9NjRHDEjf8tM7qtj3u1cIiuPhnPQCjY/MiQu12ZIvVS5ljFH4gxQ+6IHdfG\n"
-  "jjxDah2nGN59PRbxYvnKkKj9\n"
+  "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\n"
+  "98OwoX6EyneSMSy4kLGCenROmxMmtNVQZlR4rmA=\n"
   "-----END CERTIFICATE-----\n";
+
+_Static_assert(
+  sizeof(tlsTrustStore_DefaultPem) <= TLS_TRUST_STORE_MAX_DER_SIZE,
+  "Default trust anchor exceeds its persistent slot"
+);
+
+static const char tlsTrustStore_DefaultSubject[] =
+  "CN=SSL.com TLS RSA Root CA 2022,O=SSL Corporation,C=US";
 
 static uint32_t tlsTrustStore_Crc(const void* data, size_t length) {
   const uint8_t* bytes = data;
@@ -126,7 +137,7 @@ static uint8_t tlsTrustStore_IsSnapshotValid(
       ))) {
     return 0U;
   }
-  for (uint8_t index = 0U; index < TLS_TRUST_STORE_MAX_PERSISTED; ++index) {
+  for (uint8_t index = 0U; index < TLS_TRUST_STORE_MAX_ANCHORS; ++index) {
     const TlsTrustStore_AnchorTypeDef* anchor = &candidate->anchors[index];
     if ((anchor->occupied != 0U)
         && ((anchor->derLength == 0U)
@@ -138,18 +149,40 @@ static uint8_t tlsTrustStore_IsSnapshotValid(
   return 1U;
 }
 
-static HAL_StatusTypeDef tlsTrustStore_ReadSnapshot(
+static uint8_t tlsTrustStore_IsLegacySnapshotValid(
+  const TlsTrustStore_LegacySnapshotTypeDef* candidate
+) {
+  return (candidate->magic == TLS_TRUST_STORE_MAGIC)
+    && (candidate->version == TLS_TRUST_STORE_LEGACY_VERSION)
+    && (candidate->crc == tlsTrustStore_Crc(
+      candidate, offsetof(TlsTrustStore_LegacySnapshotTypeDef, crc)
+    ));
+}
+
+static void tlsTrustStore_SetDefaultAnchor(
+  TlsTrustStore_AnchorTypeDef* anchor
+) {
+  memset(anchor, 0, sizeof(*anchor));
+  anchor->occupied = 1U;
+  anchor->derLength = (uint16_t)sizeof(tlsTrustStore_DefaultPem);
+  memcpy(anchor->der, tlsTrustStore_DefaultPem, sizeof(tlsTrustStore_DefaultPem));
+  (void)strncpy(
+    anchor->subject,
+    tlsTrustStore_DefaultSubject,
+    sizeof(anchor->subject) - 1U
+  );
+}
+
+static Platform_StatusTypeDef tlsTrustStore_ReadSnapshot(
   uint32_t address,
   TlsTrustStore_SnapshotTypeDef* target
 ) {
-  if (W25Q64_Read(address, target, sizeof(*target)) != HAL_OK)
-    return HAL_ERROR;
-  return tlsTrustStore_IsSnapshotValid(target) != 0U ? HAL_OK : HAL_ERROR;
+  if (W25Q64_Read(address, target, sizeof(*target)) != PLATFORM_STATUS_OK)
+    return PLATFORM_STATUS_ERROR;
+  return tlsTrustStore_IsSnapshotValid(target) != 0U ? PLATFORM_STATUS_OK : PLATFORM_STATUS_ERROR;
 }
 
-static HAL_StatusTypeDef tlsTrustStore_Save(
-  const TlsTrustStore_SnapshotTypeDef* candidate
-) {
+static Platform_StatusTypeDef tlsTrustStore_Save(void) {
   uint32_t target =
     (trustStoreActiveAddress == FLASH_LAYOUT_TLS_TRUST_STORE_BANK_A)
       ? FLASH_LAYOUT_TLS_TRUST_STORE_BANK_B
@@ -159,30 +192,38 @@ static HAL_StatusTypeDef tlsTrustStore_Save(
        ++sector) {
     if (W25Q64_EraseSector(
           target + ((uint32_t)sector * W25Q64_SECTOR_SIZE)
-        ) != HAL_OK) {
-      return HAL_ERROR;
+        ) != PLATFORM_STATUS_OK) {
+      return PLATFORM_STATUS_ERROR;
     }
   }
-  if (W25Q64_Program(target, candidate, sizeof(*candidate)) != HAL_OK)
-    return HAL_ERROR;
-  if (tlsTrustStore_ReadSnapshot(target, &trustStoreCandidate) != HAL_OK)
-    return HAL_ERROR;
-  trustStoreSnapshot = trustStoreCandidate;
+  if (W25Q64_Program(
+        target, &trustStoreSnapshot, sizeof(trustStoreSnapshot)
+      ) != PLATFORM_STATUS_OK) {
+    return PLATFORM_STATUS_ERROR;
+  }
+  if (tlsTrustStore_ReadSnapshot(
+        target, &trustStoreSnapshot
+      ) != PLATFORM_STATUS_OK) {
+    return PLATFORM_STATUS_ERROR;
+  }
   trustStoreActiveAddress = target;
-  return HAL_OK;
+  return PLATFORM_STATUS_OK;
 }
 
 static TlsTrustStore_StatusTypeDef tlsTrustStore_CommitCandidate(void) {
-  trustStoreCandidate.magic = TLS_TRUST_STORE_MAGIC;
-  trustStoreCandidate.version = TLS_TRUST_STORE_VERSION;
-  trustStoreCandidate.reserved = 0U;
-  ++trustStoreCandidate.generation;
-  trustStoreCandidate.crc = tlsTrustStore_Crc(
-    &trustStoreCandidate, offsetof(TlsTrustStore_SnapshotTypeDef, crc)
+  trustStoreSnapshot.magic = TLS_TRUST_STORE_MAGIC;
+  trustStoreSnapshot.version = TLS_TRUST_STORE_VERSION;
+  trustStoreSnapshot.reserved = 0U;
+  ++trustStoreSnapshot.generation;
+  trustStoreSnapshot.crc = tlsTrustStore_Crc(
+    &trustStoreSnapshot, offsetof(TlsTrustStore_SnapshotTypeDef, crc)
   );
-  return (tlsTrustStore_Save(&trustStoreCandidate) == HAL_OK)
-    ? TLS_TRUST_STORE_STATUS_OK
-    : TLS_TRUST_STORE_STATUS_STORAGE_ERROR;
+  if (tlsTrustStore_Save() == PLATFORM_STATUS_OK)
+    return TLS_TRUST_STORE_STATUS_OK;
+  (void)tlsTrustStore_ReadSnapshot(
+    trustStoreActiveAddress, &trustStoreSnapshot
+  );
+  return TLS_TRUST_STORE_STATUS_STORAGE_ERROR;
 }
 
 static TlsTrustStore_StatusTypeDef tlsTrustStore_ValidateDer(
@@ -217,68 +258,103 @@ static TlsTrustStore_StatusTypeDef tlsTrustStore_ValidateDer(
     mbedtls_x509_crt_free(&certificate);
     return TLS_TRUST_STORE_STATUS_NOT_CA;
   }
-  memset(anchor, 0, sizeof(*anchor));
+  char subject[TLS_TRUST_STORE_SUBJECT_SIZE];
   int subjectLength = mbedtls_x509_dn_gets(
-    anchor->subject, sizeof(anchor->subject), &certificate.subject
+    subject, sizeof(subject), &certificate.subject
   );
   if ((subjectLength <= 0)
-      || ((size_t)subjectLength >= sizeof(anchor->subject))) {
+      || ((size_t)subjectLength >= sizeof(subject))) {
     mbedtls_x509_crt_free(&certificate);
     return TLS_TRUST_STORE_STATUS_INVALID_CERTIFICATE;
   }
+  /* Do not alter the live snapshot until every validation step succeeds. */
+  memset(anchor, 0, sizeof(*anchor));
   anchor->occupied = 1U;
   anchor->derLength = (uint16_t)length;
+  memcpy(anchor->subject, subject, (size_t)subjectLength + 1U);
   memcpy(anchor->der, der, length);
   mbedtls_x509_crt_free(&certificate);
   return TLS_TRUST_STORE_STATUS_OK;
 }
 
-HAL_StatusTypeDef TlsTrustStore_Init(void) {
+Platform_StatusTypeDef TlsTrustStore_Init(void) {
   trustStoreMutex = xSemaphoreCreateMutexStatic(
     &trustStoreMutexControlBlock
   );
   if (trustStoreMutex == NULL)
-    return HAL_ERROR;
+    return PLATFORM_STATUS_ERROR;
 
   uint8_t firstValid = (tlsTrustStore_ReadSnapshot(
     FLASH_LAYOUT_TLS_TRUST_STORE_BANK_A, &trustStoreSnapshot
-  ) == HAL_OK);
+  ) == PLATFORM_STATUS_OK);
   uint32_t firstGeneration = trustStoreSnapshot.generation;
   uint8_t secondValid = (tlsTrustStore_ReadSnapshot(
-    FLASH_LAYOUT_TLS_TRUST_STORE_BANK_B, &trustStoreCandidate
-  ) == HAL_OK);
+    FLASH_LAYOUT_TLS_TRUST_STORE_BANK_B, &trustStoreSnapshot
+  ) == PLATFORM_STATUS_OK);
+  uint32_t secondGeneration = trustStoreSnapshot.generation;
 
   if ((firstValid != 0U) && ((secondValid == 0U)
-      || (firstGeneration >= trustStoreCandidate.generation))) {
+      || (firstGeneration >= secondGeneration))) {
     if (tlsTrustStore_ReadSnapshot(
           FLASH_LAYOUT_TLS_TRUST_STORE_BANK_A, &trustStoreSnapshot
-        ) != HAL_OK) {
-      return HAL_ERROR;
+        ) != PLATFORM_STATUS_OK) {
+      return PLATFORM_STATUS_ERROR;
     }
     trustStoreActiveAddress = FLASH_LAYOUT_TLS_TRUST_STORE_BANK_A;
-    return HAL_OK;
+    return PLATFORM_STATUS_OK;
   }
   if (secondValid != 0U) {
-    trustStoreSnapshot = trustStoreCandidate;
     trustStoreActiveAddress = FLASH_LAYOUT_TLS_TRUST_STORE_BANK_B;
-    return HAL_OK;
+    return PLATFORM_STATUS_OK;
   }
 
-  memset(&trustStoreCandidate, 0, sizeof(trustStoreCandidate));
+  /* The legacy image is smaller and shares the header and anchor layout.
+   * Moving anchors backwards below prevents their source from being
+   * overwritten while the in-place image is expanded to version 2. */
+  TlsTrustStore_LegacySnapshotTypeDef* legacy =
+    (TlsTrustStore_LegacySnapshotTypeDef*)&trustStoreSnapshot;
+  uint8_t legacyFirstValid = (W25Q64_Read(
+    FLASH_LAYOUT_TLS_TRUST_STORE_LEGACY_BANK_A,
+    legacy,
+    sizeof(*legacy)
+  ) == PLATFORM_STATUS_OK) && tlsTrustStore_IsLegacySnapshotValid(legacy);
+  uint32_t legacyFirstGeneration = legacy->generation;
+  uint8_t legacySecondValid = (W25Q64_Read(
+    FLASH_LAYOUT_TLS_TRUST_STORE_LEGACY_BANK_B,
+    legacy,
+    sizeof(*legacy)
+  ) == PLATFORM_STATUS_OK) && tlsTrustStore_IsLegacySnapshotValid(legacy);
+  uint32_t legacySecondGeneration = legacy->generation;
+
+  if ((legacyFirstValid != 0U) || (legacySecondValid != 0U)) {
+    uint8_t useFirst = (legacyFirstValid != 0U)
+      && ((legacySecondValid == 0U)
+        || (legacyFirstGeneration >= legacySecondGeneration));
+    if (useFirst != 0U) {
+      (void)W25Q64_Read(
+        FLASH_LAYOUT_TLS_TRUST_STORE_LEGACY_BANK_A, legacy, sizeof(*legacy)
+      );
+    }
+    uint32_t generation = legacy->generation;
+    for (uint8_t index = 3U; index > 0U; --index)
+      trustStoreSnapshot.anchors[index] = legacy->anchors[index - 1U];
+    trustStoreSnapshot.generation = generation;
+  } else {
+    memset(&trustStoreSnapshot, 0, sizeof(trustStoreSnapshot));
+  }
+  tlsTrustStore_SetDefaultAnchor(&trustStoreSnapshot.anchors[0]);
   trustStoreActiveAddress = FLASH_LAYOUT_TLS_TRUST_STORE_BANK_B;
   return tlsTrustStore_CommitCandidate() == TLS_TRUST_STORE_STATUS_OK
-    ? HAL_OK
-    : HAL_ERROR;
+    ? PLATFORM_STATUS_OK
+    : PLATFORM_STATUS_ERROR;
 }
 
 uint8_t TlsTrustStore_Exists(uint8_t id) {
-  if (id == TLS_TRUST_STORE_FACTORY_ID)
-    return 1U;
   if ((id > TLS_TRUST_STORE_MAX_PERSISTED) || (trustStoreMutex == NULL))
     return 0U;
   uint8_t exists = 0U;
   if (xSemaphoreTake(trustStoreMutex, portMAX_DELAY) == pdTRUE) {
-    exists = trustStoreSnapshot.anchors[id - 1U].occupied != 0U;
+    exists = trustStoreSnapshot.anchors[id].occupied != 0U;
     (void)xSemaphoreGive(trustStoreMutex);
   }
   return exists;
@@ -291,26 +367,16 @@ size_t TlsTrustStore_List(
   if ((anchors == NULL) || (capacity == 0U) || (trustStoreMutex == NULL))
     return 0U;
   size_t count = 0U;
-  anchors[count].id = TLS_TRUST_STORE_FACTORY_ID;
-  anchors[count].factory = 1U;
-  anchors[count].derLength = 0U;
-  (void)strncpy(
-    anchors[count].subject,
-    tlsTrustStore_FactorySubject,
-    sizeof(anchors[count].subject) - 1U
-  );
-  anchors[count].subject[sizeof(anchors[count].subject) - 1U] = '\0';
-  ++count;
   if (xSemaphoreTake(trustStoreMutex, portMAX_DELAY) != pdTRUE)
-    return count;
+    return 0U;
   for (uint8_t index = 0U;
-       (index < TLS_TRUST_STORE_MAX_PERSISTED) && (count < capacity);
+       (index <= TLS_TRUST_STORE_MAX_PERSISTED) && (count < capacity);
        ++index) {
     const TlsTrustStore_AnchorTypeDef* anchor =
       &trustStoreSnapshot.anchors[index];
     if (anchor->occupied == 0U)
       continue;
-    anchors[count].id = index + 1U;
+    anchors[count].id = index;
     anchors[count].factory = 0U;
     anchors[count].derLength = anchor->derLength;
     (void)strncpy(
@@ -331,25 +397,15 @@ TlsTrustStore_StatusTypeDef TlsTrustStore_Parse(
 ) {
   if (certificate == NULL)
     return TLS_TRUST_STORE_STATUS_INVALID_ARGUMENT;
-  if (id == TLS_TRUST_STORE_FACTORY_ID) {
-    int result = mbedtls_x509_crt_parse(
-      certificate,
-      (const uint8_t*)tlsTrustStore_UserTrustRsa,
-      strlen(tlsTrustStore_UserTrustRsa) + 1U
-    );
-    return result == 0
-      ? TLS_TRUST_STORE_STATUS_OK
-      : TLS_TRUST_STORE_STATUS_INVALID_CERTIFICATE;
-  }
   if ((id > TLS_TRUST_STORE_MAX_PERSISTED) || (trustStoreMutex == NULL))
     return TLS_TRUST_STORE_STATUS_NOT_FOUND;
   if (xSemaphoreTake(trustStoreMutex, portMAX_DELAY) != pdTRUE)
     return TLS_TRUST_STORE_STATUS_STORAGE_ERROR;
   const TlsTrustStore_AnchorTypeDef* anchor =
-    &trustStoreSnapshot.anchors[id - 1U];
+    &trustStoreSnapshot.anchors[id];
   TlsTrustStore_StatusTypeDef status = TLS_TRUST_STORE_STATUS_NOT_FOUND;
   if (anchor->occupied != 0U) {
-    status = (mbedtls_x509_crt_parse_der(
+    status = (mbedtls_x509_crt_parse(
       certificate, anchor->der, anchor->derLength
     ) == 0)
       ? TLS_TRUST_STORE_STATUS_OK
@@ -369,22 +425,21 @@ TlsTrustStore_StatusTypeDef TlsTrustStore_Add(
   if (xSemaphoreTake(trustStoreMutex, portMAX_DELAY) != pdTRUE)
     return TLS_TRUST_STORE_STATUS_STORAGE_ERROR;
   uint8_t index;
-  for (index = 0U; index < TLS_TRUST_STORE_MAX_PERSISTED; ++index) {
+  for (index = 0U; index <= TLS_TRUST_STORE_MAX_PERSISTED; ++index) {
     if (trustStoreSnapshot.anchors[index].occupied == 0U)
       break;
   }
-  if (index == TLS_TRUST_STORE_MAX_PERSISTED) {
+  if (index > TLS_TRUST_STORE_MAX_PERSISTED) {
     (void)xSemaphoreGive(trustStoreMutex);
     return TLS_TRUST_STORE_STATUS_FULL;
   }
-  trustStoreCandidate = trustStoreSnapshot;
   TlsTrustStore_StatusTypeDef status = tlsTrustStore_ValidateDer(
-    der, length, &trustStoreCandidate.anchors[index]
+    der, length, &trustStoreSnapshot.anchors[index]
   );
   if (status == TLS_TRUST_STORE_STATUS_OK)
     status = tlsTrustStore_CommitCandidate();
   if ((status == TLS_TRUST_STORE_STATUS_OK) && (assignedId != NULL))
-    *assignedId = index + 1U;
+    *assignedId = index;
   (void)xSemaphoreGive(trustStoreMutex);
   return status;
 }
@@ -394,19 +449,16 @@ TlsTrustStore_StatusTypeDef TlsTrustStore_Replace(
   const uint8_t* der,
   size_t length
 ) {
-  if (id == TLS_TRUST_STORE_FACTORY_ID)
-    return TLS_TRUST_STORE_STATUS_FACTORY_PROTECTED;
   if ((id > TLS_TRUST_STORE_MAX_PERSISTED) || (trustStoreMutex == NULL))
     return TLS_TRUST_STORE_STATUS_NOT_FOUND;
   if (xSemaphoreTake(trustStoreMutex, portMAX_DELAY) != pdTRUE)
     return TLS_TRUST_STORE_STATUS_STORAGE_ERROR;
-  if (trustStoreSnapshot.anchors[id - 1U].occupied == 0U) {
+  if (trustStoreSnapshot.anchors[id].occupied == 0U) {
     (void)xSemaphoreGive(trustStoreMutex);
     return TLS_TRUST_STORE_STATUS_NOT_FOUND;
   }
-  trustStoreCandidate = trustStoreSnapshot;
   TlsTrustStore_StatusTypeDef status = tlsTrustStore_ValidateDer(
-    der, length, &trustStoreCandidate.anchors[id - 1U]
+    der, length, &trustStoreSnapshot.anchors[id]
   );
   if (status == TLS_TRUST_STORE_STATUS_OK)
     status = tlsTrustStore_CommitCandidate();
@@ -415,21 +467,18 @@ TlsTrustStore_StatusTypeDef TlsTrustStore_Replace(
 }
 
 TlsTrustStore_StatusTypeDef TlsTrustStore_Delete(uint8_t id) {
-  if (id == TLS_TRUST_STORE_FACTORY_ID)
-    return TLS_TRUST_STORE_STATUS_FACTORY_PROTECTED;
   if ((id > TLS_TRUST_STORE_MAX_PERSISTED) || (trustStoreMutex == NULL))
     return TLS_TRUST_STORE_STATUS_NOT_FOUND;
   if (xSemaphoreTake(trustStoreMutex, portMAX_DELAY) != pdTRUE)
     return TLS_TRUST_STORE_STATUS_STORAGE_ERROR;
-  if (trustStoreSnapshot.anchors[id - 1U].occupied == 0U) {
+  if (trustStoreSnapshot.anchors[id].occupied == 0U) {
     (void)xSemaphoreGive(trustStoreMutex);
     return TLS_TRUST_STORE_STATUS_NOT_FOUND;
   }
-  trustStoreCandidate = trustStoreSnapshot;
   memset(
-    &trustStoreCandidate.anchors[id - 1U],
+    &trustStoreSnapshot.anchors[id],
     0,
-    sizeof(trustStoreCandidate.anchors[id - 1U])
+    sizeof(trustStoreSnapshot.anchors[id])
   );
   TlsTrustStore_StatusTypeDef status = tlsTrustStore_CommitCandidate();
   (void)xSemaphoreGive(trustStoreMutex);
@@ -441,8 +490,9 @@ TlsTrustStore_StatusTypeDef TlsTrustStore_Reset(void) {
       || (xSemaphoreTake(trustStoreMutex, portMAX_DELAY) != pdTRUE)) {
     return TLS_TRUST_STORE_STATUS_STORAGE_ERROR;
   }
-  memset(&trustStoreCandidate, 0, sizeof(trustStoreCandidate));
-  trustStoreCandidate.generation = trustStoreSnapshot.generation;
+  uint32_t generation = trustStoreSnapshot.generation;
+  memset(&trustStoreSnapshot, 0, sizeof(trustStoreSnapshot));
+  trustStoreSnapshot.generation = generation;
   TlsTrustStore_StatusTypeDef status = tlsTrustStore_CommitCandidate();
   (void)xSemaphoreGive(trustStoreMutex);
   return status;
