@@ -12,6 +12,14 @@ typedef enum {
   PLATFORM_STATUS_TIMEOUT,
 } Platform_StatusTypeDef;
 
+#define PLATFORM_GPIO_MODE_INPUT      0U
+#define PLATFORM_GPIO_MODE_OUTPUT     1U
+#define PLATFORM_GPIO_MODE_ALTERNATE  2U
+#define PLATFORM_GPIO_PULL_NONE       0U
+#define PLATFORM_GPIO_PULL_UP         1U
+#define PLATFORM_GPIO_PULL_DOWN       2U
+#define PLATFORM_GPIO_SPEED_VERY_HIGH 3U
+
 void Platform_Init(void);
 void Platform_IncrementTick(void);
 uint32_t Platform_GetTick(void);

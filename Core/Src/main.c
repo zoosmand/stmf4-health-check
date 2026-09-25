@@ -30,14 +30,21 @@
 #include <stdio.h>
 
 #define ETHERNET_PHY_STARTUP_DELAY_MS 2500U
+#define SYSTEM_REGISTER_WAIT_LIMIT    32000000UL
 
-static void system_ClockConfigure(void);
+static Platform_StatusTypeDef system_ClockConfigure(void);
+static Platform_StatusTypeDef system_WaitForRegister(
+  volatile uint32_t* reg,
+  uint32_t mask,
+  uint32_t expected
+);
 static void peripheral_GpioInit(void);
 static void peripheral_CrcInit(void);
 static void peripheral_Spi2Init(void);
 
 int main(void) {
-  system_ClockConfigure();
+  if (system_ClockConfigure() != PLATFORM_STATUS_OK)
+    Error_Handler();
   Platform_Init();
 
   peripheral_GpioInit();
@@ -65,21 +72,41 @@ int main(void) {
   Error_Handler();
 }
 
-static void system_ClockConfigure(void) {
+static Platform_StatusTypeDef system_WaitForRegister(
+  volatile uint32_t* reg,
+  uint32_t mask,
+  uint32_t expected
+) {
+  for (uint32_t remaining = SYSTEM_REGISTER_WAIT_LIMIT;
+       remaining != 0U;
+       --remaining) {
+    if ((*reg & mask) == expected)
+      return PLATFORM_STATUS_OK;
+  }
+  return PLATFORM_STATUS_TIMEOUT;
+}
+
+static Platform_StatusTypeDef system_ClockConfigure(void) {
   RCC->APB1ENR |= RCC_APB1ENR_PWREN;
   (void)RCC->APB1ENR;
   PWR->CR = (PWR->CR & ~PWR_CR_VOS) | PWR_CR_VOS;
 
   RCC->CR |= RCC_CR_HSEON;
-  while ((RCC->CR & RCC_CR_HSERDY) == 0U) {
-  }
+  if (system_WaitForRegister(
+        &RCC->CR, RCC_CR_HSERDY, RCC_CR_HSERDY
+      ) != PLATFORM_STATUS_OK)
+    return PLATFORM_STATUS_TIMEOUT;
 
   PWR->CR |= PWR_CR_DBP;
-  while ((PWR->CR & PWR_CR_DBP) == 0U) {
-  }
+  if (system_WaitForRegister(
+        &PWR->CR, PWR_CR_DBP, PWR_CR_DBP
+      ) != PLATFORM_STATUS_OK)
+    return PLATFORM_STATUS_TIMEOUT;
   RCC->BDCR |= RCC_BDCR_LSEON;
-  while ((RCC->BDCR & RCC_BDCR_LSERDY) == 0U) {
-  }
+  if (system_WaitForRegister(
+        &RCC->BDCR, RCC_BDCR_LSERDY, RCC_BDCR_LSERDY
+      ) != PLATFORM_STATUS_OK)
+    return PLATFORM_STATUS_TIMEOUT;
 
   RCC->PLLCFGR = 25U
     | (336U << RCC_PLLCFGR_PLLN_Pos)
@@ -87,17 +114,22 @@ static void system_ClockConfigure(void) {
     | RCC_PLLCFGR_PLLSRC_HSE
     | (7U << RCC_PLLCFGR_PLLQ_Pos);
   RCC->CR |= RCC_CR_PLLON;
-  while ((RCC->CR & RCC_CR_PLLRDY) == 0U) {
-  }
+  if (system_WaitForRegister(
+        &RCC->CR, RCC_CR_PLLRDY, RCC_CR_PLLRDY
+      ) != PLATFORM_STATUS_OK)
+    return PLATFORM_STATUS_TIMEOUT;
 
   FLASH->ACR = FLASH_ACR_LATENCY_5WS
     | FLASH_ACR_PRFTEN | FLASH_ACR_ICEN | FLASH_ACR_DCEN;
   RCC->CFGR = (RCC->CFGR
       & ~(RCC_CFGR_HPRE | RCC_CFGR_PPRE1 | RCC_CFGR_PPRE2 | RCC_CFGR_SW))
     | RCC_CFGR_PPRE1_DIV4 | RCC_CFGR_PPRE2_DIV2 | RCC_CFGR_SW_PLL;
-  while ((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_PLL) {
-  }
+  if (system_WaitForRegister(
+        &RCC->CFGR, RCC_CFGR_SWS, RCC_CFGR_SWS_PLL
+      ) != PLATFORM_STATUS_OK)
+    return PLATFORM_STATUS_TIMEOUT;
   SystemCoreClockUpdate();
+  return PLATFORM_STATUS_OK;
 }
 
 static void peripheral_GpioInit(void) {

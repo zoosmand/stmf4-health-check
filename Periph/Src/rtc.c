@@ -24,6 +24,7 @@
 #define RTC_SECONDS_PER_DAY    86400UL
 #define RTC_UNIX_YEAR_2000     946684800UL
 #define RTC_UNIX_YEAR_2100     4102444800UL
+#define RTC_REGISTER_TIMEOUT_MS 1000U
 
 static uint8_t rtc_ToBcd(uint8_t value) {
   return (uint8_t)(((value / 10U) << 4U) | (value % 10U));
@@ -42,6 +43,38 @@ static void rtc_Lock(void) {
   RTC->WPR = 0xFFU;
 }
 
+static Platform_StatusTypeDef rtc_WaitForFlag(
+  uint32_t flag,
+  uint8_t expectedSet
+) {
+  uint32_t started = Platform_GetTick();
+  while (((RTC->ISR & flag) != 0U) != (expectedSet != 0U)) {
+    if ((Platform_GetTick() - started) >= RTC_REGISTER_TIMEOUT_MS)
+      return PLATFORM_STATUS_TIMEOUT;
+  }
+  return PLATFORM_STATUS_OK;
+}
+
+static Platform_StatusTypeDef rtc_WaitForLse(void) {
+  uint32_t started = Platform_GetTick();
+  while ((RCC->BDCR & RCC_BDCR_LSERDY) == 0U) {
+    if ((Platform_GetTick() - started) >= RTC_REGISTER_TIMEOUT_MS)
+      return PLATFORM_STATUS_TIMEOUT;
+  }
+  return PLATFORM_STATUS_OK;
+}
+
+static Platform_StatusTypeDef rtc_EnterInitMode(void) {
+  RTC->ISR |= RTC_ISR_INIT;
+  return rtc_WaitForFlag(RTC_ISR_INITF, 1U);
+}
+
+static Platform_StatusTypeDef rtc_LeaveInitMode(void) {
+  RTC->ISR &= ~RTC_ISR_INIT;
+  RTC->ISR &= ~RTC_ISR_RSF;
+  return rtc_WaitForFlag(RTC_ISR_RSF, 1U);
+}
+
 static uint8_t rtc_IsLeapYear(uint16_t year) {
   return ((year % 4U) == 0U)
     && (((year % 100U) != 0U) || ((year % 400U) == 0U));
@@ -58,17 +91,27 @@ static uint8_t rtc_DaysInMonth(uint16_t year, uint8_t month) {
 }
 
 Platform_StatusTypeDef Rtc_Init(void) {
+  uint32_t selectedClock = RCC->BDCR & RCC_BDCR_RTCSEL;
+  if ((selectedClock != 0U) && (selectedClock != RCC_BDCR_RTCSEL_0)) {
+    RCC->BDCR |= RCC_BDCR_BDRST;
+    RCC->BDCR &= ~RCC_BDCR_BDRST;
+    RCC->BDCR |= RCC_BDCR_LSEON;
+    if (rtc_WaitForLse() != PLATFORM_STATUS_OK)
+      return PLATFORM_STATUS_TIMEOUT;
+  }
   RCC->BDCR = (RCC->BDCR & ~RCC_BDCR_RTCSEL) | RCC_BDCR_RTCSEL_0;
   RCC->BDCR |= RCC_BDCR_RTCEN;
   rtc_Unlock();
-  RTC->ISR |= RTC_ISR_INIT;
-  while ((RTC->ISR & RTC_ISR_INITF) == 0U) {
+  if (rtc_EnterInitMode() != PLATFORM_STATUS_OK) {
+    rtc_Lock();
+    return PLATFORM_STATUS_TIMEOUT;
   }
   RTC->CR &= ~(RTC_CR_FMT | RTC_CR_OSEL);
-  RTC->PRER = (127U << RTC_PRER_PREDIV_A_Pos) | 255U;
-  RTC->ISR &= ~RTC_ISR_INIT;
+  RTC->PRER = 255U;
+  RTC->PRER |= 127U << RTC_PRER_PREDIV_A_Pos;
+  Platform_StatusTypeDef status = rtc_LeaveInitMode();
   rtc_Lock();
-  return PLATFORM_STATUS_OK;
+  return status;
 }
 
 Platform_StatusTypeDef Rtc_SetUnixTime(uint32_t unixTime) {
@@ -98,8 +141,9 @@ Platform_StatusTypeDef Rtc_SetUnixTime(uint32_t unixTime) {
     ((unixTime / RTC_SECONDS_PER_DAY) + 3UL) % 7UL + 1UL
   );
   rtc_Unlock();
-  RTC->ISR |= RTC_ISR_INIT;
-  while ((RTC->ISR & RTC_ISR_INITF) == 0U) {
+  if (rtc_EnterInitMode() != PLATFORM_STATUS_OK) {
+    rtc_Lock();
+    return PLATFORM_STATUS_TIMEOUT;
   }
   RTC->TR = ((uint32_t)rtc_ToBcd(hours) << RTC_TR_HU_Pos)
     | ((uint32_t)rtc_ToBcd(minutes) << RTC_TR_MNU_Pos)
@@ -108,8 +152,10 @@ Platform_StatusTypeDef Rtc_SetUnixTime(uint32_t unixTime) {
     | ((uint32_t)weekday << RTC_DR_WDU_Pos)
     | ((uint32_t)rtc_ToBcd(month) << RTC_DR_MU_Pos)
     | ((uint32_t)rtc_ToBcd((uint8_t)(days + 1UL)) << RTC_DR_DU_Pos);
-  RTC->ISR &= ~RTC_ISR_INIT;
+  Platform_StatusTypeDef status = rtc_LeaveInitMode();
   rtc_Lock();
+  if (status != PLATFORM_STATUS_OK)
+    return status;
   RTC->BKP0R = RTC_SYNC_MARKER;
   return PLATFORM_STATUS_OK;
 }

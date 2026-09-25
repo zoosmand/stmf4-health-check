@@ -339,6 +339,10 @@ migrated transactionally. Existing resources retain their host, port, path,
 and enabled state and are assigned default trust-anchor ID `0`. Version-1
 trust-anchor slots are also migrated transactionally; the new mutable default
 is inserted at ID `0` and the former custom IDs `1` through `3` are preserved.
+On version 1, ID `0` implicitly selected the compiled USERTrust RSA root. After
+the upgrade, ID `0` selects SSL.com TLS RSA Root CA 2022 instead. Consequently,
+an existing non-default resource that relied on a USERTrust/Sectigo chain must
+be assigned a suitable migrated or newly uploaded anchor after the upgrade.
 
 ### Updating the server certificate and key
 

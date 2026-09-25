@@ -258,17 +258,20 @@ static TlsTrustStore_StatusTypeDef tlsTrustStore_ValidateDer(
     mbedtls_x509_crt_free(&certificate);
     return TLS_TRUST_STORE_STATUS_NOT_CA;
   }
-  memset(anchor, 0, sizeof(*anchor));
+  char subject[TLS_TRUST_STORE_SUBJECT_SIZE];
   int subjectLength = mbedtls_x509_dn_gets(
-    anchor->subject, sizeof(anchor->subject), &certificate.subject
+    subject, sizeof(subject), &certificate.subject
   );
   if ((subjectLength <= 0)
-      || ((size_t)subjectLength >= sizeof(anchor->subject))) {
+      || ((size_t)subjectLength >= sizeof(subject))) {
     mbedtls_x509_crt_free(&certificate);
     return TLS_TRUST_STORE_STATUS_INVALID_CERTIFICATE;
   }
+  /* Do not alter the live snapshot until every validation step succeeds. */
+  memset(anchor, 0, sizeof(*anchor));
   anchor->occupied = 1U;
   anchor->derLength = (uint16_t)length;
+  memcpy(anchor->subject, subject, (size_t)subjectLength + 1U);
   memcpy(anchor->der, der, length);
   mbedtls_x509_crt_free(&certificate);
   return TLS_TRUST_STORE_STATUS_OK;
@@ -305,6 +308,9 @@ Platform_StatusTypeDef TlsTrustStore_Init(void) {
     return PLATFORM_STATUS_OK;
   }
 
+  /* The legacy image is smaller and shares the header and anchor layout.
+   * Moving anchors backwards below prevents their source from being
+   * overwritten while the in-place image is expanded to version 2. */
   TlsTrustStore_LegacySnapshotTypeDef* legacy =
     (TlsTrustStore_LegacySnapshotTypeDef*)&trustStoreSnapshot;
   uint8_t legacyFirstValid = (W25Q64_Read(
