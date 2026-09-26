@@ -355,6 +355,18 @@ TlsTransport_StatusTypeDef TlsTransport_Request(
   result->tlsVersion = mbedtls_ssl_get_version(&ssl);
   result->cipherSuite = mbedtls_ssl_get_ciphersuite(&ssl);
 
+  char hostHeader[256];
+  int hostHeaderLength = (port == 443U)
+    ? snprintf(hostHeader, sizeof(hostHeader), "%s", host)
+    : snprintf(
+        hostHeader, sizeof(hostHeader), "%s:%u", host, (unsigned int)port
+      );
+  if ((hostHeaderLength <= 0)
+      || ((size_t)hostHeaderLength >= sizeof(hostHeader))) {
+    detail = MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+    goto cleanup;
+  }
+
   char request[768];
   size_t bodyLength = strlen(body);
   int requestLength;
@@ -368,14 +380,14 @@ TlsTransport_StatusTypeDef TlsTransport_Request(
       "%s %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n"
       "User-Agent: stm32-health-check/1\r\nContent-Type: %s\r\n"
       "Content-Length: %lu\r\n\r\n%s",
-      method, resource, host, contentType, (unsigned long)bodyLength, body
+      method, resource, hostHeader, contentType, (unsigned long)bodyLength, body
     );
   } else {
     requestLength = snprintf(
       request, sizeof(request),
       "%s %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n"
       "User-Agent: stm32-health-check/1\r\n\r\n",
-      method, resource, host
+      method, resource, hostHeader
     );
   }
   if ((requestLength <= 0)
