@@ -35,6 +35,8 @@ Project documentation:
 - W25Q64JV NOR Flash interface on SPI2
 - DS18B20 support for up to six sensors on the dedicated one-wire connector
 - Passive-buzzer alerts for failed resource checks
+- Human-like heartbeat indication on the first onboard user LED
+- Recoverable physical-button factory reset with a cancellation window
 - Diagnostic `printf()` output through the onboard RS485 interface
 - Device-specific locally administered MAC address derived from the STM32 UID
 
@@ -54,6 +56,9 @@ into two phases:
 The principal services are:
 
 - **Default task** — starts and refreshes the independent watchdog.
+- **Heartbeat service** — drives LED1 with two short pulses once per second.
+- **Factory-reset service** — monitors S1 and securely restores persistent
+  configuration to its compiled defaults.
 - **Network task** — initializes lwIP, drains Ethernet frames, monitors the PHY,
   and maintains DHCP or fallback addressing.
 - **Time service** — synchronizes the hardware RTC with `pool.ntp.org` and
@@ -424,6 +429,7 @@ initialization so the device remains deselected during startup.
 | TLS server credential | 2 | A/B transactional snapshot on credential changes. |
 | Health-check result log | 2 | Wear-aware append-only ring. |
 | TLS client trust anchors | 4 | Two-sector A/B banks updated on CA changes. |
+| Factory-reset recovery marker | 1 | Verified before reset-owned sectors are erased. |
 
 An A/B store writes and verifies a complete snapshot in the inactive sector
 before making it active, protecting infrequently changed data from power loss
@@ -457,6 +463,35 @@ Hardware PWM generates the tone, while a statically allocated FreeRTOS task
 handles the pattern timing without blocking TLS, networking, sensors, or the
 watchdog. Concurrent requests are coalesced rather than accumulated in an
 unbounded queue.
+
+## Heartbeat LED
+
+The first onboard user LED (`LED1`, `PE13`) indicates that the FreeRTOS
+scheduler is running. The LED is wired open-drain and active-low. A dedicated
+statically allocated service task produces a human-like 1.22-second pattern:
+120 ms on, 100 ms off, 120 ms on, and 880 ms off. The heartbeat is independent
+of Ethernet connectivity and health-check results.
+
+## Factory reset
+
+Hold the onboard `S1` button (`PE10`, active-low) continuously for 10 seconds
+to arm a factory reset. Five warning tones are played, followed by a 10-second
+cancellation window. Release S1 and double-click it within 600 ms to cancel.
+Cancellation is acknowledged with three beeps.
+If the window expires, the device erases management users, health-check
+configuration and history, trust anchors, and uploaded management-server TLS
+credentials, then reboots.
+
+The compiled `master` administrator and its factory password verifier are not
+stored in NOR Flash and therefore remain available after reset. On reboot, the
+compiled management certificate and key are used, and normal first-provisioning
+logic recreates the `pgw.intraclear.com` resource and its SSL.com trust anchor.
+All additional management users are removed.
+
+Factory reset uses a dedicated NOR recovery-marker sector. The marker is
+written and verified before any persistent store is erased and is cleared only
+after every reset-owned sector has been erased. If power is lost during the
+operation, startup completes the erasure before opening or reseeding any store.
 
 ## RS485 diagnostic output
 
