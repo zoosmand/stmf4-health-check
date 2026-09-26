@@ -438,22 +438,31 @@ currently active credential remains in service.
 
 Import
 `test/postman/STM32 F407 Health Check API.postman_collection.json`. Set these
-collection variables locally:
+variables in the active Postman environment:
 
 - `baseUrl` — the device URL, updated for its DHCP address if necessary
-- `masterPassword` and `testPassword` — secret test credentials
+- `username` and `password` — the single account used by the collection
+
+The login and refresh scripts store `accessToken` and `refreshToken` in that
+same environment. Switching environments therefore switches the target device,
+account, and session without changing collection data. Configure these optional
+collection variables as needed:
+
 - `certificateDerPath` and `privateKeyDerPath` — generated DER files
 - `trustAnchorDerPath` — a DER-encoded root CA certificate for trust-store tests
 - `healthCheckHost`, `healthCheckPort`, `healthCheckPath`, and
   `healthCheckEnabled` — the resource exercised by the collection
 - `callbackEnabled`, `callbackMethod`, `callbackHost`, `callbackPort`,
   `callbackPath`, and `callbackTrustAnchorId` — outbound callback settings
+- `managedUsername`, `managedPassword`, `managedRole`, and `managedEnabled` —
+  the account targeted by user create, update, and delete requests
 
 Trust the management certificate in Postman. The collection tests
-authentication and token rotation, user CRUD, RTC and temperature reads,
-health-check configuration and logs, resource CRUD, trust-anchor lifecycle and
+authentication and token rotation, user listing and CRUD, RTC and temperature
+reads, health-check configuration and logs, resource CRUD, trust-anchor lifecycle and
 in-use protection, callback configuration, credential replacement, and token
-revocation. Master and ordinary-user token pairs are kept separate, and scripts
+revocation. Administrative requests require an administrator environment;
+read-only requests can use an enabled ordinary-user environment. Scripts
 automatically retain rotated tokens and created resource/anchor indices.
 Depending on the Postman version, raw binary upload files may still need to be
 selected manually.
