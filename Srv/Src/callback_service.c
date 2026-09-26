@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define CALLBACK_TASK_STACK_DEPTH 1024U
+#define CALLBACK_TASK_STACK_DEPTH 2048U
 #define CALLBACK_QUEUE_LENGTH     3U
 #define CALLBACK_BODY_SIZE        192U
 #define CALLBACK_RESOURCE_SIZE    256U

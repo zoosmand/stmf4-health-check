@@ -36,11 +36,18 @@
 
 #define TLS_TRANSPORT_TIMEOUT_MS       10000
 #define TLS_TRANSPORT_STATUS_LINE_SIZE 128U
+#define TLS_TRANSPORT_REQUEST_SIZE     768U
+#define TLS_TRANSPORT_HOST_HEADER_SIZE 70U
 
 typedef struct {
   int socketDescriptor;
   int lastError;
 } TlsTransport_SocketContextTypeDef;
+
+/* TlsPlatform_Lock serializes all transport calls, so shared request buffers
+   are safe and keep nearly 1 KiB off each caller task's stack. */
+static char tlsTransport_RequestBuffer[TLS_TRANSPORT_REQUEST_SIZE];
+static char tlsTransport_HostHeader[TLS_TRANSPORT_HOST_HEADER_SIZE];
 
 static uint8_t tlsTransport_IsTimeoutError(int socketError) {
   return ((socketError == EAGAIN)
@@ -355,19 +362,20 @@ TlsTransport_StatusTypeDef TlsTransport_Request(
   result->tlsVersion = mbedtls_ssl_get_version(&ssl);
   result->cipherSuite = mbedtls_ssl_get_ciphersuite(&ssl);
 
-  char hostHeader[256];
+  char* hostHeader = tlsTransport_HostHeader;
   int hostHeaderLength = (port == 443U)
-    ? snprintf(hostHeader, sizeof(hostHeader), "%s", host)
+    ? snprintf(hostHeader, TLS_TRANSPORT_HOST_HEADER_SIZE, "%s", host)
     : snprintf(
-        hostHeader, sizeof(hostHeader), "%s:%u", host, (unsigned int)port
+        hostHeader, TLS_TRANSPORT_HOST_HEADER_SIZE,
+        "%s:%u", host, (unsigned int)port
       );
   if ((hostHeaderLength <= 0)
-      || ((size_t)hostHeaderLength >= sizeof(hostHeader))) {
+      || ((size_t)hostHeaderLength >= TLS_TRANSPORT_HOST_HEADER_SIZE)) {
     detail = MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
     goto cleanup;
   }
 
-  char request[768];
+  char* request = tlsTransport_RequestBuffer;
   size_t bodyLength = strlen(body);
   int requestLength;
   if (bodyLength != 0U) {
@@ -376,7 +384,7 @@ TlsTransport_StatusTypeDef TlsTransport_Request(
       goto cleanup;
     }
     requestLength = snprintf(
-      request, sizeof(request),
+      request, TLS_TRANSPORT_REQUEST_SIZE,
       "%s %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n"
       "User-Agent: stm32-health-check/1\r\nContent-Type: %s\r\n"
       "Content-Length: %lu\r\n\r\n%s",
@@ -384,14 +392,14 @@ TlsTransport_StatusTypeDef TlsTransport_Request(
     );
   } else {
     requestLength = snprintf(
-      request, sizeof(request),
+      request, TLS_TRANSPORT_REQUEST_SIZE,
       "%s %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n"
       "User-Agent: stm32-health-check/1\r\n\r\n",
       method, resource, hostHeader
     );
   }
   if ((requestLength <= 0)
-      || ((size_t)requestLength >= sizeof(request))) {
+      || ((size_t)requestLength >= TLS_TRANSPORT_REQUEST_SIZE)) {
     detail = MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
     goto cleanup;
   }

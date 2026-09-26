@@ -45,6 +45,7 @@
 #include "w25q64.h"
 
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -205,6 +206,8 @@ static uint8_t apiService_JsonString(
   char* output,
   size_t capacity
 ) {
+  if ((json == NULL) || (key == NULL) || (output == NULL) || (capacity == 0U))
+    return 0U;
   char pattern[40];
   if (snprintf(pattern, sizeof(pattern), "\"%s\"", key) <= 0)
     return 0U;
@@ -220,17 +223,37 @@ static uint8_t apiService_JsonString(
     ++cursor;
   if (*cursor++ != '"')
     return 0U;
+  const char* value = cursor;
   size_t length = 0U;
   while ((*cursor != '\0') && (*cursor != '"')) {
     if ((*cursor == '\\') || ((uint8_t)*cursor < 0x20U)
-        || (length >= (capacity - 1U)))
+        || (length >= (capacity - 1U))) {
       return 0U;
-    output[length++] = *cursor++;
+    }
+    ++length;
+    ++cursor;
   }
   if (*cursor != '"')
     return 0U;
+  ++cursor;
+  while ((*cursor == ' ') || (*cursor == '\t')
+      || (*cursor == '\r') || (*cursor == '\n')) {
+    ++cursor;
+  }
+  if ((*cursor != ',') && (*cursor != '}'))
+    return 0U;
+  memcpy(output, value, length);
   output[length] = '\0';
   return 1U;
+}
+
+static uint8_t apiService_JsonHasKey(const char* json, const char* key) {
+  if ((json == NULL) || (key == NULL))
+    return 0U;
+  char pattern[40];
+  int length = snprintf(pattern, sizeof(pattern), "\"%s\"", key);
+  return ((length > 0) && ((size_t)length < sizeof(pattern))
+      && (strstr(json, pattern) != NULL)) ? 1U : 0U;
 }
 
 static uint8_t apiService_JsonBoolean(
@@ -238,6 +261,8 @@ static uint8_t apiService_JsonBoolean(
   const char* key,
   uint8_t* value
 ) {
+  if ((json == NULL) || (key == NULL) || (value == NULL))
+    return 0U;
   char pattern[40];
   (void)snprintf(pattern, sizeof(pattern), "\"%s\"", key);
   const char* cursor = strstr(json, pattern);
@@ -249,12 +274,23 @@ static uint8_t apiService_JsonBoolean(
   do {
     ++cursor;
   } while ((*cursor == ' ') || (*cursor == '\t'));
-  if (strncmp(cursor, "true", 4U) == 0)
-    *value = 1U;
-  else if (strncmp(cursor, "false", 5U) == 0)
-    *value = 0U;
-  else
+  uint8_t parsed;
+  if (strncmp(cursor, "true", 4U) == 0) {
+    parsed = 1U;
+    cursor += 4U;
+  } else if (strncmp(cursor, "false", 5U) == 0) {
+    parsed = 0U;
+    cursor += 5U;
+  } else {
     return 0U;
+  }
+  while ((*cursor == ' ') || (*cursor == '\t')
+      || (*cursor == '\r') || (*cursor == '\n')) {
+    ++cursor;
+  }
+  if ((*cursor != ',') && (*cursor != '}'))
+    return 0U;
+  *value = parsed;
   return 1U;
 }
 
@@ -263,6 +299,8 @@ static uint8_t apiService_JsonNumber(
   const char* key,
   uint32_t* value
 ) {
+  if ((json == NULL) || (key == NULL) || (value == NULL))
+    return 0U;
   char pattern[40];
   (void)snprintf(pattern, sizeof(pattern), "\"%s\"", key);
   const char* cursor = strstr(json, pattern);
@@ -274,9 +312,19 @@ static uint8_t apiService_JsonNumber(
   do {
     ++cursor;
   } while ((*cursor == ' ') || (*cursor == '\t'));
+  if ((*cursor < '0') || (*cursor > '9'))
+    return 0U;
+  errno = 0;
   char* end = NULL;
   unsigned long parsed = strtoul(cursor, &end, 10);
-  if (end == cursor)
+  if ((end == cursor) || (errno == ERANGE) || (parsed > UINT32_MAX))
+    return 0U;
+  cursor = end;
+  while ((*cursor == ' ') || (*cursor == '\t')
+      || (*cursor == '\r') || (*cursor == '\n')) {
+    ++cursor;
+  }
+  if ((*cursor != ',') && (*cursor != '}'))
     return 0U;
   *value = (uint32_t)parsed;
   return 1U;
@@ -969,6 +1017,8 @@ static int apiService_Dispatch(
     CallbackConfig_TypeDef config;
     CallbackConfig_Get(&config);
     char method[8];
+    char host[CALLBACK_CONFIG_HOST_SIZE];
+    char path[CALLBACK_CONFIG_PATH_SIZE];
     uint32_t port = config.port;
     uint32_t trustAnchor = config.trustAnchorId;
     uint8_t enabled = config.enabled;
@@ -977,20 +1027,38 @@ static int apiService_Dispatch(
       sizeof(method) - 1U
     );
     method[sizeof(method) - 1U] = '\0';
-    (void)apiService_JsonBoolean(request->body, "enabled", &enabled);
-    (void)apiService_JsonString(
-      request->body, "method", method, sizeof(method)
-    );
-    (void)apiService_JsonString(
-      request->body, "host", config.host, sizeof(config.host)
-    );
-    (void)apiService_JsonString(
-      request->body, "path", config.path, sizeof(config.path)
-    );
-    (void)apiService_JsonNumber(request->body, "port", &port);
-    (void)apiService_JsonNumber(
-      request->body, "trust_anchor_id", &trustAnchor
-    );
+    memcpy(host, config.host, sizeof(host));
+    memcpy(path, config.path, sizeof(path));
+    if (((apiService_JsonHasKey(request->body, "enabled") != 0U)
+          && (apiService_JsonBoolean(
+            request->body, "enabled", &enabled
+          ) == 0U))
+        || ((apiService_JsonHasKey(request->body, "method") != 0U)
+          && (apiService_JsonString(
+            request->body, "method", method, sizeof(method)
+          ) == 0U))
+        || ((apiService_JsonHasKey(request->body, "host") != 0U)
+          && (apiService_JsonString(
+            request->body, "host", host, sizeof(host)
+          ) == 0U))
+        || ((apiService_JsonHasKey(request->body, "path") != 0U)
+          && (apiService_JsonString(
+            request->body, "path", path, sizeof(path)
+          ) == 0U))
+        || ((apiService_JsonHasKey(request->body, "port") != 0U)
+          && (apiService_JsonNumber(
+            request->body, "port", &port
+          ) == 0U))
+        || ((apiService_JsonHasKey(
+              request->body, "trust_anchor_id"
+            ) != 0U)
+          && (apiService_JsonNumber(
+            request->body, "trust_anchor_id", &trustAnchor
+          ) == 0U))) {
+      return apiService_Error(
+        ssl, 400, "Bad Request", "invalid_request"
+      );
+    }
     if ((strcmp(method, "GET") != 0) && (strcmp(method, "POST") != 0))
       return apiService_Error(ssl, 400, "Bad Request", "invalid_method");
     if ((port == 0U) || (port > 65535U))
@@ -1006,6 +1074,8 @@ static int apiService_Dispatch(
       ? CALLBACK_METHOD_POST : CALLBACK_METHOD_GET;
     config.port = (uint16_t)port;
     config.trustAnchorId = (uint8_t)trustAnchor;
+    memcpy(config.host, host, sizeof(config.host));
+    memcpy(config.path, path, sizeof(config.path));
     if (CallbackConfig_Set(&config) != PLATFORM_STATUS_OK)
       return apiService_Error(ssl, 400, "Bad Request", "invalid_request");
     return apiService_Respond(ssl, 200, "OK", "{\"updated\":true}");
@@ -1191,13 +1261,32 @@ static int apiService_Dispatch(
     host[sizeof(host) - 1U] = '\0';
     (void)strncpy(path, resources[index].path, sizeof(path) - 1U);
     path[sizeof(path) - 1U] = '\0';
-    (void)apiService_JsonString(request->body, "host", host, sizeof(host));
-    (void)apiService_JsonString(request->body, "path", path, sizeof(path));
-    (void)apiService_JsonNumber(request->body, "port", &portValue);
-    (void)apiService_JsonBoolean(request->body, "enabled", &enabled);
-    (void)apiService_JsonNumber(
-      request->body, "trust_anchor_id", &trustAnchorValue
-    );
+    if (((apiService_JsonHasKey(request->body, "host") != 0U)
+          && (apiService_JsonString(
+            request->body, "host", host, sizeof(host)
+          ) == 0U))
+        || ((apiService_JsonHasKey(request->body, "path") != 0U)
+          && (apiService_JsonString(
+            request->body, "path", path, sizeof(path)
+          ) == 0U))
+        || ((apiService_JsonHasKey(request->body, "port") != 0U)
+          && (apiService_JsonNumber(
+            request->body, "port", &portValue
+          ) == 0U))
+        || ((apiService_JsonHasKey(request->body, "enabled") != 0U)
+          && (apiService_JsonBoolean(
+            request->body, "enabled", &enabled
+          ) == 0U))
+        || ((apiService_JsonHasKey(
+              request->body, "trust_anchor_id"
+            ) != 0U)
+          && (apiService_JsonNumber(
+            request->body, "trust_anchor_id", &trustAnchorValue
+          ) == 0U))) {
+      return apiService_Error(
+        ssl, 400, "Bad Request", "invalid_request"
+      );
+    }
     if ((portValue == 0U) || (portValue > 65535U))
       return apiService_Error(ssl, 400, "Bad Request", "invalid_port");
     if ((trustAnchorValue > TLS_TRUST_STORE_MAX_PERSISTED)
