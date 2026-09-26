@@ -22,6 +22,7 @@
 
 #include "FreeRTOS.h"
 #include "buzzer.h"
+#include "semphr.h"
 #include "task.h"
 
 #include <stdio.h>
@@ -37,7 +38,9 @@
 static StaticTask_t buzzerTaskControlBlock;
 static StackType_t buzzerTaskStack[BUZZER_SERVICE_TASK_STACK_DEPTH];
 static TaskHandle_t buzzerTask;
-static TaskHandle_t resetWarningRequester;
+static StaticSemaphore_t synchronousCompletionControlBlock;
+static SemaphoreHandle_t synchronousCompletion;
+static uint8_t synchronousRequestActive;
 static uint8_t resetWarningRequested;
 
 static void buzzerService_Tone(uint32_t durationMs) {
@@ -57,25 +60,34 @@ static void buzzerService_Task(void* argument) {
   for (;;) {
     (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     taskENTER_CRITICAL();
+    uint8_t synchronous = synchronousRequestActive;
     uint8_t toneCount = resetWarningRequested != 0U
       ? BUZZER_RESET_WARNING_TONE_COUNT
       : BUZZER_ALERT_TONE_COUNT;
-    TaskHandle_t requester = resetWarningRequester;
-    resetWarningRequested = 0U;
-    resetWarningRequester = NULL;
+    if (synchronous != 0U)
+      resetWarningRequested = 0U;
     taskEXIT_CRITICAL();
     for (uint8_t tone = 0U; tone < toneCount; ++tone) {
       buzzerService_Tone(BUZZER_ALERT_TONE_DURATION_MS);
       if ((tone + 1U) < toneCount)
         vTaskDelay(pdMS_TO_TICKS(BUZZER_ALERT_PAUSE_DURATION_MS));
     }
-    if (requester != NULL)
-      xTaskNotifyGive(requester);
+    if (synchronous != 0U) {
+      taskENTER_CRITICAL();
+      synchronousRequestActive = 0U;
+      taskEXIT_CRITICAL();
+      (void)xSemaphoreGive(synchronousCompletion);
+    }
   }
 }
 
 ErrorStatus BuzzerService_Init(void) {
   if (Buzzer_Init() != PLATFORM_STATUS_OK)
+    return ERROR;
+  synchronousCompletion = xSemaphoreCreateBinaryStatic(
+    &synchronousCompletionControlBlock
+  );
+  if (synchronousCompletion == NULL)
     return ERROR;
   buzzerTask = xTaskCreateStatic(
     buzzerService_Task,
@@ -99,19 +111,19 @@ ErrorStatus BuzzerService_Alert(void) {
 static ErrorStatus buzzerService_PlayAndWait(uint8_t resetWarning) {
   if (buzzerTask == NULL)
     return ERROR;
-  TaskHandle_t requester = xTaskGetCurrentTaskHandle();
   taskENTER_CRITICAL();
-  if (resetWarningRequester != NULL) {
+  if (synchronousRequestActive != 0U) {
     taskEXIT_CRITICAL();
     return ERROR;
   }
-  resetWarningRequester = requester;
+  synchronousRequestActive = 1U;
   resetWarningRequested = resetWarning;
   taskEXIT_CRITICAL();
+  (void)xSemaphoreTake(synchronousCompletion, 0U);
   xTaskNotifyGive(buzzerTask);
-  return ulTaskNotifyTake(
-    pdTRUE, pdMS_TO_TICKS(BUZZER_RESET_WARNING_TIMEOUT_MS)
-  ) != 0U ? SUCCESS : ERROR;
+  return xSemaphoreTake(
+    synchronousCompletion, pdMS_TO_TICKS(BUZZER_RESET_WARNING_TIMEOUT_MS)
+  ) == pdTRUE ? SUCCESS : ERROR;
 }
 
 ErrorStatus BuzzerService_FactoryResetWarning(void) {

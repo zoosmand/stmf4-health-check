@@ -468,8 +468,8 @@ unbounded queue.
 
 The first onboard user LED (`LED1`, `PE13`) indicates that the FreeRTOS
 scheduler is running. The LED is wired open-drain and active-low. A dedicated
-statically allocated service task produces a human-like one-second pattern:
-120 ms on, 100 ms off, 120 ms on, and 660 ms off. The heartbeat is independent
+statically allocated service task produces a human-like 1.22-second pattern:
+120 ms on, 100 ms off, 120 ms on, and 880 ms off. The heartbeat is independent
 of Ethernet connectivity and health-check results.
 
 ## Factory reset

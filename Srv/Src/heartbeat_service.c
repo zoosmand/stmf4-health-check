@@ -20,6 +20,9 @@
 #define HEARTBEAT_INTER_PULSE_PAUSE_MS 100U
 #define HEARTBEAT_SECOND_PULSE_MS      120U
 #define HEARTBEAT_REST_MS              880U
+#define HEARTBEAT_PERIOD_MS            (HEARTBEAT_FIRST_PULSE_MS \
+  + HEARTBEAT_INTER_PULSE_PAUSE_MS + HEARTBEAT_SECOND_PULSE_MS \
+  + HEARTBEAT_REST_MS)
 
 static StaticTask_t heartbeatTaskControlBlock;
 static StackType_t heartbeatTaskStack[HEARTBEAT_TASK_STACK_DEPTH];
@@ -33,6 +36,7 @@ static void heartbeatService_SetLed(uint8_t enabled) {
 
 static void heartbeatService_Task(void* argument) {
   (void)argument;
+  TickType_t periodStarted = xTaskGetTickCount();
 
   for (;;) {
     heartbeatService_SetLed(1U);
@@ -42,7 +46,7 @@ static void heartbeatService_Task(void* argument) {
     heartbeatService_SetLed(1U);
     vTaskDelay(pdMS_TO_TICKS(HEARTBEAT_SECOND_PULSE_MS));
     heartbeatService_SetLed(0U);
-    vTaskDelay(pdMS_TO_TICKS(HEARTBEAT_REST_MS));
+    vTaskDelayUntil(&periodStarted, pdMS_TO_TICKS(HEARTBEAT_PERIOD_MS));
   }
 }
 

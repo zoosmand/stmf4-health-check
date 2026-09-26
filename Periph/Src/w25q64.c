@@ -103,15 +103,28 @@ static Platform_StatusTypeDef w25q64_WaitReady(uint32_t timeoutMs) {
 }
 
 Platform_StatusTypeDef W25Q64_Init(void) {
-  flashMutex = xSemaphoreCreateMutexStatic(&flashMutexControlBlock);
+  flashMutex = xSemaphoreCreateRecursiveMutexStatic(&flashMutexControlBlock);
   if (flashMutex == NULL)
     return PLATFORM_STATUS_ERROR;
   return W25Q64_IsAvailable() != 0U ? PLATFORM_STATUS_OK : PLATFORM_STATUS_ERROR;
 }
 
+Platform_StatusTypeDef W25Q64_Lock(void) {
+  if (flashMutex == NULL)
+    return PLATFORM_STATUS_ERROR;
+  return xSemaphoreTakeRecursive(flashMutex, portMAX_DELAY) == pdTRUE
+    ? PLATFORM_STATUS_OK
+    : PLATFORM_STATUS_ERROR;
+}
+
+void W25Q64_Unlock(void) {
+  if (flashMutex != NULL)
+    (void)xSemaphoreGiveRecursive(flashMutex);
+}
+
 uint8_t W25Q64_IsAvailable(void) {
   if ((flashMutex == NULL)
-      || (xSemaphoreTake(flashMutex, portMAX_DELAY) != pdTRUE)) {
+      || (xSemaphoreTakeRecursive(flashMutex, portMAX_DELAY) != pdTRUE)) {
     return 0U;
   }
   const uint8_t command = W25Q64_COMMAND_JEDEC_ID;
@@ -119,7 +132,7 @@ uint8_t W25Q64_IsAvailable(void) {
   Platform_StatusTypeDef status = w25q64_Command(
     &command, 1U, identity, sizeof(identity)
   );
-  (void)xSemaphoreGive(flashMutex);
+  (void)xSemaphoreGiveRecursive(flashMutex);
   return ((status == PLATFORM_STATUS_OK)
       && (identity[0] == 0xEFU)
       && (identity[1] == 0x40U)
@@ -132,7 +145,7 @@ Platform_StatusTypeDef W25Q64_Read(uint32_t address, void* data, size_t length) 
   if ((data == NULL) || (length == 0U)
       || (address > W25Q64_CAPACITY_BYTES - length))
     return PLATFORM_STATUS_ERROR;
-  if (xSemaphoreTake(flashMutex, portMAX_DELAY) != pdTRUE)
+  if (xSemaphoreTakeRecursive(flashMutex, portMAX_DELAY) != pdTRUE)
     return PLATFORM_STATUS_ERROR;
   uint8_t command[4] = {
     W25Q64_COMMAND_READ,
@@ -143,7 +156,7 @@ Platform_StatusTypeDef W25Q64_Read(uint32_t address, void* data, size_t length) 
   Platform_StatusTypeDef status = w25q64_Command(
     command, sizeof(command), data, length
   );
-  (void)xSemaphoreGive(flashMutex);
+  (void)xSemaphoreGiveRecursive(flashMutex);
   return status;
 }
 
@@ -151,7 +164,7 @@ Platform_StatusTypeDef W25Q64_EraseSector(uint32_t address) {
   if ((address >= W25Q64_CAPACITY_BYTES)
       || ((address % W25Q64_SECTOR_SIZE) != 0U))
     return PLATFORM_STATUS_ERROR;
-  if (xSemaphoreTake(flashMutex, portMAX_DELAY) != pdTRUE)
+  if (xSemaphoreTakeRecursive(flashMutex, portMAX_DELAY) != pdTRUE)
     return PLATFORM_STATUS_ERROR;
   Platform_StatusTypeDef status = w25q64_WriteEnable();
   uint8_t command[4] = {
@@ -164,7 +177,7 @@ Platform_StatusTypeDef W25Q64_EraseSector(uint32_t address) {
     status = w25q64_Command(command, sizeof(command), NULL, 0U);
   if (status == PLATFORM_STATUS_OK)
     status = w25q64_WaitReady(W25Q64_ERASE_TIMEOUT_MS);
-  (void)xSemaphoreGive(flashMutex);
+  (void)xSemaphoreGiveRecursive(flashMutex);
   return status;
 }
 
@@ -176,7 +189,7 @@ Platform_StatusTypeDef W25Q64_Program(
   if ((data == NULL) || (length == 0U)
       || (address > W25Q64_CAPACITY_BYTES - length))
     return PLATFORM_STATUS_ERROR;
-  if (xSemaphoreTake(flashMutex, portMAX_DELAY) != pdTRUE)
+  if (xSemaphoreTakeRecursive(flashMutex, portMAX_DELAY) != pdTRUE)
     return PLATFORM_STATUS_ERROR;
 
   const uint8_t* source = data;
@@ -207,6 +220,6 @@ Platform_StatusTypeDef W25Q64_Program(
     length -= chunk;
   }
 
-  (void)xSemaphoreGive(flashMutex);
+  (void)xSemaphoreGiveRecursive(flashMutex);
   return status;
 }

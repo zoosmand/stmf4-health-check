@@ -23,6 +23,15 @@
 Platform_StatusTypeDef W25Q64_Init(void);
 
 /**
+  * @brief Lock the flash across a multi-operation transaction.
+  * @note Individual operations may be called while this recursive lock is held.
+  */
+Platform_StatusTypeDef W25Q64_Lock(void);
+
+/** @brief Release a transaction lock acquired with W25Q64_Lock(). */
+void W25Q64_Unlock(void);
+
+/**
   * @brief Verify that the expected NOR Flash still responds on SPI2.
   * @retval (uint8_t) Nonzero when the JEDEC identity matches the W25Q64JV.
   */

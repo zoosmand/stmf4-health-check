@@ -28,6 +28,7 @@
 #define FACTORY_RESET_DEBOUNCE_MS          30U
 #define FACTORY_RESET_POLL_MS              20U
 #define FACTORY_RESET_MARKER_MAGIC         0x46525354UL
+#define FACTORY_RESET_VERIFY_CHUNK_SIZE     64U
 
 typedef struct {
   uint32_t magic;
@@ -86,14 +87,33 @@ static Platform_StatusTypeDef factoryReset_Arm(void) {
     : PLATFORM_STATUS_ERROR;
 }
 
+static Platform_StatusTypeDef factoryReset_VerifyErased(uint32_t address) {
+  uint8_t data[FACTORY_RESET_VERIFY_CHUNK_SIZE];
+  for (uint32_t offset = 0U; offset < W25Q64_SECTOR_SIZE;
+       offset += sizeof(data)) {
+    if (W25Q64_Read(address + offset, data, sizeof(data))
+        != PLATFORM_STATUS_OK) {
+      return PLATFORM_STATUS_ERROR;
+    }
+    for (size_t index = 0U; index < sizeof(data); ++index) {
+      if (data[index] != 0xFFU)
+        return PLATFORM_STATUS_ERROR;
+    }
+    IWDG->KR = 0xAAAAU;
+  }
+  return PLATFORM_STATUS_OK;
+}
+
 static Platform_StatusTypeDef factoryReset_ErasePersistentData(void) {
   for (uint32_t sector = 1U;
        sector <= FLASH_LAYOUT_FACTORY_RESET_DATA_SECTORS;
        ++sector) {
     uint32_t address = W25Q64_CAPACITY_BYTES
       - (sector * W25Q64_SECTOR_SIZE);
-    if (W25Q64_EraseSector(address) != PLATFORM_STATUS_OK)
+    if ((W25Q64_EraseSector(address) != PLATFORM_STATUS_OK)
+        || (factoryReset_VerifyErased(address) != PLATFORM_STATUS_OK)) {
       return PLATFORM_STATUS_ERROR;
+    }
     IWDG->KR = 0xAAAAU;
   }
   return W25Q64_EraseSector(FLASH_LAYOUT_FACTORY_RESET_MARKER_SECTOR);
@@ -148,9 +168,14 @@ static uint8_t factoryReset_CancelRequested(uint32_t windowStarted) {
 }
 
 static void factoryReset_Execute(void) {
+  if (W25Q64_Lock() != PLATFORM_STATUS_OK) {
+    printf("Factory reset: unable to lock persistent storage.\r\n");
+    return;
+  }
   vTaskSuspendAll();
   if (factoryReset_Arm() != PLATFORM_STATUS_OK) {
     (void)xTaskResumeAll();
+    W25Q64_Unlock();
     printf("Factory reset: unable to write recovery marker.\r\n");
     return;
   }
