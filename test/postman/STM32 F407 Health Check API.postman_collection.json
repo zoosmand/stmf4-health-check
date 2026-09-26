@@ -1,0 +1,1363 @@
+{
+  "info": {
+    "_postman_id": "e0212015-2469-4c52-9387-9ce8ab8f3a2a",
+    "name": "STM32 F407 Health Check API",
+    "description": "End-to-end authorization, user, health-check, telemetry, log, and TLS credential tests. Set secret password variables and DER file paths locally.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "13569524"
+  },
+  "item": [
+    {
+      "name": "Get device health",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Device is operational\", () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.expect(body.status).to.eql(\"ok\");",
+              "pm.expect(body.systems).to.include({api: true, network: true, rtc: true, flash: true, temperature: true});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Request token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Login succeeded\", () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.expect(body.token_type).to.eql(\"Bearer\");",
+              "if (pm.response.code === 200 && typeof body.access_token === \"string\" && body.access_token.length === 64 && typeof body.refresh_token === \"string\" && body.refresh_token.length === 64) {",
+              "  pm.collectionVariables.set(\"masterAccessToken\", body.access_token);",
+              "  pm.collectionVariables.set(\"masterRefreshToken\", body.refresh_token);",
+              "}"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"username\": \"{{masterUsername}}\",\n    \"password\": \"{{masterPassword}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/auth/token",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "auth",
+            "token"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "List users",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{masterAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/users",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "users"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Create user",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{masterAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"username\": \"{{testUsername}}\",\n    \"password\": \"{{testPassword}}\",\n    \"role\": \"user\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/users",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "users"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Update user",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{masterAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"password\": \"{{testPassword}}\",\n    \"enabled\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/users/{{testUsername}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "users",
+            "{{testUsername}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Request token user",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"User login succeeded\", () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "if (pm.response.code === 200) pm.expect(body.token_type).to.eql(\"Bearer\");",
+              "if (pm.response.code === 200 && typeof body.access_token === \"string\" && body.access_token.length === 64 && typeof body.refresh_token === \"string\" && body.refresh_token.length === 64) {",
+              "  pm.collectionVariables.set(\"userAccessToken\", body.access_token);",
+              "  pm.collectionVariables.set(\"userRefreshToken\", body.refresh_token);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"username\": \"{{testUsername}}\",\n    \"password\": \"{{testPassword}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/auth/token",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "auth",
+            "token"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Refresh user token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const oldAccess = pm.collectionVariables.get(\"userAccessToken\");",
+              "const oldRefresh = pm.collectionVariables.get(\"userRefreshToken\");",
+              "pm.test(\"User refresh succeeded\", () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "if (pm.response.code === 200) {",
+              "  pm.expect(body.access_token).to.not.eql(oldAccess);",
+              "  pm.expect(body.refresh_token).to.not.eql(oldRefresh);",
+              "  if (typeof body.access_token === \"string\" && body.access_token.length === 64 && typeof body.refresh_token === \"string\" && body.refresh_token.length === 64) {",
+              "    pm.collectionVariables.set(\"userAccessToken\", body.access_token);",
+              "    pm.collectionVariables.set(\"userRefreshToken\", body.refresh_token);",
+              "  }",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"refresh_token\": \"{{userRefreshToken}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/auth/refresh",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "auth",
+            "refresh"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get RTC",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"RTC returned\", () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.expect(body).to.have.property(\"synchronized\");",
+              "pm.expect(body).to.have.property(\"unix_time\");"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{userAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/rtc",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "rtc"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get temperature",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Temperature returned\", () => pm.response.to.have.status(200));",
+              "pm.expect(pm.response.json().sensors).to.be.an(\"array\");"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{userAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/temperature",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "temperature"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get health-check configuration",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Configuration returned\", () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.expect(body.period_seconds).to.be.within(60, 1800);",
+              "pm.expect(body.resources).to.be.an(\"array\");"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{userAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/health-check/config",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "health-check",
+            "config"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Update health-check period",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Period updated\", () => pm.response.to.have.status(200));\npm.expect(pm.response.json().period_seconds).to.eql(Number(pm.variables.replaceIn(\"{{healthCheckPeriodSeconds}}\")));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{masterAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"period_seconds\": {{healthCheckPeriodSeconds}}\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/health-check/config",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "health-check",
+            "config"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "List trust anchors",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Trust anchors returned\", () => pm.response.to.have.status(200));",
+              "const anchors = pm.response.json().trust_anchors;",
+              "pm.expect(anchors).to.be.an(\"array\");",
+              "pm.expect(anchors[0]).to.include({id: 0, factory: false});"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{userAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/trust-anchors",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "trust-anchors"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Update callback configuration",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Callback configuration updated\", () => pm.response.to.have.status(200));",
+              "if (pm.response.code === 200) pm.expect(pm.response.json().updated).to.eql(true);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{masterAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"enabled\": {{callbackEnabled}},\n    \"method\": \"{{callbackMethod}}\",\n    \"host\": \"{{callbackHost}}\",\n    \"port\": {{callbackPort}},\n    \"path\": \"{{callbackPath}}\",\n    \"trust_anchor_id\": {{callbackTrustAnchorId}}\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/callback/config",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "callback",
+            "config"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get callback configuration",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Callback configuration returned\", () => pm.response.to.have.status(200));",
+              "if (pm.response.code === 200) {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.enabled).to.eql(pm.variables.replaceIn(\"{{callbackEnabled}}\") === \"true\");",
+              "  pm.expect(body.method).to.eql(pm.variables.replaceIn(\"{{callbackMethod}}\"));",
+              "  pm.expect(body.host).to.eql(pm.variables.replaceIn(\"{{callbackHost}}\"));",
+              "  pm.expect(body.port).to.eql(Number(pm.variables.replaceIn(\"{{callbackPort}}\")));",
+              "  pm.expect(body.path).to.eql(pm.variables.replaceIn(\"{{callbackPath}}\"));",
+              "  pm.expect(body.trust_anchor_id).to.eql(Number(pm.variables.replaceIn(\"{{callbackTrustAnchorId}}\")));",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{userAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/callback/config",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "callback",
+            "config"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Create trust anchor (manual file selection may be required)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Trust anchor created\", () => pm.response.to.have.status(201));",
+              "pm.collectionVariables.set(\"trustAnchorId\", pm.response.json().id);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{masterAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/octet-stream"
+          }
+        ],
+        "body": {
+          "mode": "file",
+          "file": {
+            "src": "{{trustAnchorDerPath}}"
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/trust-anchors",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "trust-anchors"
+          ]
+        },
+        "description": "Upload one DER-encoded root CA certificate, at most 2048 bytes. Postman may require selecting the file manually."
+      },
+      "response": []
+    },
+    {
+      "name": "Create health-check resource",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Resource created\", () => pm.response.to.have.status(201));\nconst body = pm.response.json();\npm.collectionVariables.set(\"resourceIndex\", body.index);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{masterAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"host\": \"{{healthCheckHost}}\",\n    \"port\": {{healthCheckPort}},\n    \"path\": \"/{{healthCheckPath}}\",\n    \"enabled\": {{healthCheckEnabled}},\n    \"trust_anchor_id\": {{trustAnchorId}}\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/health-check/resources",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "health-check",
+            "resources"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Update health-check resource",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Resource updated\", () => pm.response.to.have.status(200));\npm.expect(pm.response.json().enabled).to.eql(pm.variables.replaceIn(\"{{healthCheckEnabled}}\") === \"true\");"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{masterAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"path\": \"/{{healthCheckPath}}\",\n    \"enabled\": {{healthCheckEnabled}},\n    \"trust_anchor_id\": {{trustAnchorId}}\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/health-check/resources/{{resourceIndex}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "health-check",
+            "resources",
+            "{{resourceIndex}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Reject deletion of in-use trust anchor",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"In-use anchor protected\", () => pm.response.to.have.status(409));",
+              "pm.expect(pm.response.json().error).to.eql(\"trust_anchor_in_use\");"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{masterAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/trust-anchors/{{trustAnchorId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "trust-anchors",
+            "{{trustAnchorId}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Replace trust anchor (manual file selection may be required)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Trust anchor replaced\", () => pm.response.to.have.status(200));",
+              "pm.expect(pm.response.json().replaced).to.eql(true);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{masterAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/octet-stream"
+          }
+        ],
+        "body": {
+          "mode": "file",
+          "file": {
+            "src": "{{trustAnchorDerPath}}"
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/trust-anchors/{{trustAnchorId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "trust-anchors",
+            "{{trustAnchorId}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get health-check logs",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Logs returned\", () => pm.response.to.have.status(200));",
+              "const logs = pm.response.json().logs;",
+              "pm.expect(logs).to.be.an(\"array\");",
+              "pm.expect(logs.length).to.be.at.most(50);"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{userAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/health-check/logs",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "health-check",
+            "logs"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Delete health-check resource",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Resource deleted\", () => pm.response.to.have.status(200));",
+              "pm.collectionVariables.unset(\"resourceIndex\");"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{masterAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/health-check/resources/{{resourceIndex}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "health-check",
+            "resources",
+            "{{resourceIndex}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Delete trust anchor",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Trust anchor deleted\", () => pm.response.to.have.status(200));",
+              "pm.expect(pm.response.json().deleted).to.eql(true);",
+              "pm.collectionVariables.unset(\"trustAnchorId\");"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{masterAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/trust-anchors/{{trustAnchorId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "trust-anchors",
+            "{{trustAnchorId}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Upload TLS certificate (manual file selection may be required)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Certificate staged or activated\", () => pm.expect([200, 202]).to.include(pm.response.code));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{masterAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/octet-stream"
+          }
+        ],
+        "body": {
+          "mode": "file",
+          "file": {
+            "src": "{{certificateDerPath}}"
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/tls/certificate",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "tls",
+            "certificate"
+          ]
+        },
+        "description": "First run python3 tools/convert_credentials_to_der.py. Confirm TLS/Private/management_server.crt.der exists, then select that DER file manually in Body > Binary if Postman cannot resolve the path variable. PEM and empty bodies are rejected."
+      },
+      "response": []
+    },
+    {
+      "name": "Upload TLS private key (manual file selection may be required)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Credential pair activated\", () => pm.response.to.have.status(200));",
+              "pm.expect(pm.response.json().status).to.eql(\"activated\");"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{masterAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/octet-stream"
+          }
+        ],
+        "body": {
+          "mode": "file",
+          "file": {
+            "src": "{{privateKeyDerPath}}"
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/tls/private-key",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "tls",
+            "private-key"
+          ]
+        },
+        "description": "Run after the certificate upload. Select TLS/Private/management_server.key.der manually in Body > Binary if Postman cannot resolve the path variable. PEM and empty bodies are rejected."
+      },
+      "response": []
+    },
+    {
+      "name": "Delete user",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"User deleted\", () => pm.response.to.have.status(200));",
+              "pm.expect(pm.response.json().deleted).to.eql(true);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{masterAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/users/{{testUsername}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "users",
+            "{{testUsername}}"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Revoke token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Session revoked\", () => pm.response.to.have.status(200));",
+              "pm.collectionVariables.unset(\"masterAccessToken\");",
+              "pm.collectionVariables.unset(\"masterRefreshToken\");",
+              "pm.collectionVariables.unset(\"userAccessToken\");",
+              "pm.collectionVariables.unset(\"userRefreshToken\");"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{masterAccessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/auth/revoke",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "auth",
+            "revoke"
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://checker-02.health.intraclear.com"
+    },
+    {
+      "key": "masterUsername",
+      "value": "master"
+    },
+    {
+      "key": "masterPassword",
+      "secret": true
+    },
+    {
+      "key": "masterRefreshToken",
+      "secret": true
+    },
+    {
+      "key": "userRefreshToken",
+      "secret": true
+    },
+    {
+      "key": "testUsername",
+      "value": "operator"
+    },
+    {
+      "key": "testPassword",
+      "secret": true
+    },
+    {
+      "key": "trustAnchorDerPath",
+      "value": "TLS/CA/ISRG_Root_X1.der"
+    },
+    {
+      "key": "certificateDerPath",
+      "value": "TLS/Private/management_server.crt.der"
+    },
+    {
+      "key": "privateKeyDerPath",
+      "value": "TLS/Private/management_server.key.der"
+    },
+    {
+      "key": "healthCheckPort",
+      "value": "443"
+    },
+    {
+      "key": "healthCheckPeriodSeconds",
+      "value": "60"
+    },
+    {
+      "key": "healthCheckHost",
+      "value": "example.com"
+    },
+    {
+      "key": "healthCheckPath",
+      "value": ""
+    },
+    {
+      "key": "healthCheckEnabled",
+      "value": "true"
+    },
+    {
+      "key": "callbackEnabled",
+      "value": "false"
+    },
+    {
+      "key": "callbackMethod",
+      "value": "POST"
+    },
+    {
+      "key": "callbackHost",
+      "value": "loopback.intraclear.com"
+    },
+    {
+      "key": "callbackPort",
+      "value": "443"
+    },
+    {
+      "key": "callbackPath",
+      "value": "/"
+    },
+    {
+      "key": "callbackTrustAnchorId",
+      "value": "0"
+    },
+    {
+      "key": "trustAnchorId",
+      "value": ""
+    },
+    {
+      "key": "resourceIndex",
+      "value": ""
+    },
+    {
+      "key": "masterAccessToken",
+      "secret": true
+    },
+    {
+      "key": "userAccessToken",
+      "secret": true
+    }
+  ]
+}

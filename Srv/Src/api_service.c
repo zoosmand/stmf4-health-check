@@ -181,7 +181,9 @@ static int apiService_ReadRequest(
   if (bearer != NULL) {
     bearer += 24U;
     char* end = strstr(bearer, "\r\n");
-    size_t length = (end != NULL) ? (size_t)(end - bearer) : 0U;
+    if (end == NULL)
+      end = headerEnd;
+    size_t length = (size_t)(end - bearer);
     if (length >= sizeof(request->authorization))
       return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
     memcpy(request->authorization, bearer, length);
