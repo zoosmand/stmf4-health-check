@@ -23,6 +23,10 @@
 
 #include "main.h"
 
+/**
+  * @brief Create the periodic HTTPS health-check task.
+  * @retval (ErrorStatus) SUCCESS when the static task is created.
+  */
 ErrorStatus HealthCheckService_Init(void);
 
 #endif /* HEALTH_CHECK_SERVICE_H */

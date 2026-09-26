@@ -15,6 +15,8 @@ Project documentation:
 - [Development rules](docs/DEVELOPMENT_RULES.md)
 - [Naming conventions](docs/NAMING_CONVENTIONS.md)
 - [Supplying ignored source trees in forks](docs/IGNORED_SOURCES.md)
+- [Callback hardware regression checks](test/callback/README.md)
+- [Factory-reset hardware regression checks](test/factory_reset/README.md)
 
 ## Features
 
@@ -37,6 +39,7 @@ Project documentation:
 - Passive-buzzer alerts for failed resource checks
 - Human-like heartbeat indication on the first onboard user LED
 - Recoverable physical-button factory reset with a cancellation window
+- Configurable asynchronous HTTPS result callbacks using GET or JSON POST
 - Diagnostic `printf()` output through the onboard RS485 interface
 - Device-specific locally administered MAC address derived from the STM32 UID
 
@@ -56,7 +59,8 @@ into two phases:
 The principal services are:
 
 - **Default task** — starts and refreshes the independent watchdog.
-- **Heartbeat service** — drives LED1 with two short pulses once per second.
+- **Heartbeat service** — drives LED1 with two short pulses in a repeating
+  1.22-second pattern.
 - **Factory-reset service** — monitors S1 and securely restores persistent
   configuration to its compiled defaults.
 - **Network task** — initializes lwIP, drains Ethernet frames, monitors the PHY,
@@ -67,6 +71,8 @@ The principal services are:
   every seven seconds.
 - **Health-check service** — performs configured HTTPS checks and records the
   results.
+- **Callback service** — asynchronously delivers completed check results using
+  the configured HTTPS GET or JSON POST request.
 - **Management API service** — accepts authenticated TLS 1.3 API requests on
   TCP port 443.
 
@@ -199,6 +205,41 @@ returns the fifty newest records through `GET /api/v1/health-check/logs`:
 The monotonically increasing `sequence` remains the reliable ordering key when
 an early record was written before RTC synchronization.
 
+### Outbound result callback
+
+Every completed health check is offered to a three-entry, non-blocking queue.
+A dedicated static callback task delivers queued results without delaying the
+health-check loop. When the queue is full, the oldest undelivered result is
+dropped in favor of the newest one. Callback delivery shares the serialized
+TLS allocator with the management server and health checks.
+
+The callback is disabled by default. Its initial target is
+`https://loopback.intraclear.com/`, using trust-anchor ID `0`. Configure the
+correct trust anchor for the target before enabling it. `POST` sends exactly
+four JSON keys:
+
+```json
+{"resource":0,"status":"ok","http_status":200,"elapsed_ms":845}
+```
+
+`GET` appends the same four values as query parameters. `resource` is the
+zero-based health-check configuration slot and `status` is either `ok` or
+`failed`. The callback reads only the bounded HTTP response status line.
+
+Read or partially update its persistent configuration with:
+
+```http
+GET /api/v1/callback/config
+PUT /api/v1/callback/config
+```
+
+Example update body:
+
+```json
+{"enabled":true,"method":"POST","host":"loopback.intraclear.com",
+ "port":443,"path":"/","trust_anchor_id":1}
+```
+
 ## Management API
 
 The device serves a bounded JSON API over TLS 1.3 on TCP port 443. Except for
@@ -272,6 +313,8 @@ development.
 | `PUT` | `/api/v1/health-check/resources/{index}` | Administrator bearer | Update a resource; omitted fields retain their values. |
 | `DELETE` | `/api/v1/health-check/resources/{index}` | Administrator bearer | Clear a resource slot; a later resource may reuse its index. |
 | `GET` | `/api/v1/health-check/logs` | Any authenticated bearer | Return the fifty newest completed checks. |
+| `GET` | `/api/v1/callback/config` | Any authenticated bearer | Read outbound callback configuration. |
+| `PUT` | `/api/v1/callback/config` | Administrator bearer | Partially update outbound callback configuration; omitted fields retain their values. |
 | `GET` | `/api/v1/temperature` | Any authenticated bearer | Return the latest DS18B20 readings. |
 | `GET` | `/api/v1/rtc` | Any authenticated bearer | Return UTC time and synchronization state. |
 
@@ -290,7 +333,7 @@ through the health-check log. The response also reports the firmware `version`
 build timestamp):
 
 ```json
-{"status":"ok","version":"0.0.2","build_date":"Aug  3 2026",
+{"status":"ok","version":"0.0.3","build_date":"Sep 26 2026",
 "systems":{"api":true,"network":true,"rtc":true,"flash":true,"temperature":true}}
 ```
 
@@ -333,11 +376,12 @@ or updating a resource:
 ```
 
 Uploads are parsed and checked for the CA basic constraint before an A/B Flash
-update is activated. An anchor referenced by a resource cannot be deleted.
-Replacing an anchor keeps its ID and immediately affects later checks. An
-individual anchor or the complete store can be deleted only when no configured
-resource references the affected ID. This prevents enabled or disabled
-resources from retaining a dangling trust-anchor dependency.
+update is activated. An anchor referenced by a health-check resource cannot be
+deleted, regardless of whether that resource is enabled. An anchor selected by
+the callback is also protected while callback delivery is enabled. Replacing
+an anchor keeps its ID and immediately affects later requests. An individual
+anchor or the complete store can be deleted only when these in-use checks pass,
+preventing active configuration from retaining a dangling dependency.
 
 On the first boot after upgrading, version-1 health-check configuration is
 migrated transactionally. Existing resources retain their host, port, path,
@@ -393,18 +437,32 @@ currently active credential remains in service.
 ### Postman tests
 
 Import
-`test/postman/STM32_F407_Health_Check_API.postman_collection.json`. Set these
-collection variables locally:
+`test/postman/STM32 F407 Health Check API.postman_collection.json`. Set these
+variables in the active Postman environment:
 
 - `baseUrl` — the device URL, updated for its DHCP address if necessary
-- `masterPassword` and `testPassword` — secret test credentials
+- `username` and `password` — the single account used by the collection
+
+The login and refresh scripts store `accessToken` and `refreshToken` in that
+same environment. Switching environments therefore switches the target device,
+account, and session without changing collection data. Configure these optional
+collection variables as needed:
+
 - `certificateDerPath` and `privateKeyDerPath` — generated DER files
 - `trustAnchorDerPath` — a DER-encoded root CA certificate for trust-store tests
+- `healthCheckHost`, `healthCheckPort`, `healthCheckPath`, and
+  `healthCheckEnabled` — the resource exercised by the collection
+- `callbackEnabled`, `callbackMethod`, `callbackHost`, `callbackPort`,
+  `callbackPath`, and `callbackTrustAnchorId` — outbound callback settings
+- `managedUsername`, `managedPassword`, `managedRole`, and `managedEnabled` —
+  the account targeted by user create, update, and delete requests
 
 Trust the management certificate in Postman. The collection tests
-authentication and token rotation, user CRUD, RTC and temperature reads,
-health-check configuration and logs, resource CRUD, trust-anchor lifecycle and
-in-use protection, credential replacement, and token revocation. Scripts
+authentication and token rotation, user listing and CRUD, RTC and temperature
+reads, health-check configuration and logs, resource CRUD, trust-anchor lifecycle and
+in-use protection, callback configuration, credential replacement, and token
+revocation. Administrative requests require an administrator environment;
+read-only requests can use an enabled ordinary-user environment. Scripts
 automatically retain rotated tokens and created resource/anchor indices.
 Depending on the Postman version, raw binary upload files may still need to be
 selected manually.
@@ -428,8 +486,9 @@ initialization so the device remains deselected during startup.
 | Health-check configuration | 2 | A/B transactional snapshot on administrator changes. |
 | TLS server credential | 2 | A/B transactional snapshot on credential changes. |
 | Health-check result log | 2 | Wear-aware append-only ring. |
-| TLS client trust anchors | 4 | Two-sector A/B banks updated on CA changes. |
+| TLS client trust anchors | 6 | Two three-sector A/B banks updated on CA changes. |
 | Factory-reset recovery marker | 1 | Verified before reset-owned sectors are erased. |
+| Callback configuration | 2 | A/B transactional snapshot of callback settings. |
 
 An A/B store writes and verifies a complete snapshot in the inactive sector
 before making it active, protecting infrequently changed data from power loss
@@ -452,10 +511,10 @@ seven seconds and rescans the bus once per minute.
 
 A passive buzzer is driven by hardware PWM on `PA8` (`TIM1_CH1`), exposed at
 `P5.4`, through a 2N2222 transistor. Connect `P5.4 / PA8` to the transistor
-base through a 1–4.7 kOhm
-resistor, connect the emitter to ground, and place the buzzer between its
-supply and the collector. The MCU and buzzer supply must share ground. Add a
-flyback diode only when the sounder is magnetic rather than piezoelectric.
+base through a 1–4.7 kOhm resistor, connect the emitter to ground, and place
+the buzzer between its supply and the collector. The MCU and buzzer supply must
+share ground. Add a flyback diode only when the sounder is magnetic rather than
+piezoelectric.
 
 The service emits one short startup tone to confirm the wiring. Every failed
 resource check schedules three alert tones; successful checks remain silent.
@@ -480,7 +539,7 @@ cancellation window. Release S1 and double-click it within 600 ms to cancel.
 Cancellation is acknowledged with three beeps.
 If the window expires, the device erases management users, health-check
 configuration and history, trust anchors, and uploaded management-server TLS
-credentials, then reboots.
+credentials, and callback configuration, then reboots.
 
 The compiled `master` administrator and its factory password verifier are not
 stored in NOR Flash and therefore remain available after reset. On reboot, the
@@ -490,8 +549,9 @@ All additional management users are removed.
 
 Factory reset uses a dedicated NOR recovery-marker sector. The marker is
 written and verified before any persistent store is erased and is cleared only
-after every reset-owned sector has been erased. If power is lost during the
-operation, startup completes the erasure before opening or reseeding any store.
+after all 17 reset-owned data sectors have been erased and verified. If power
+is lost during the operation, startup completes the erasure before opening or
+reseeding any store.
 
 ## RS485 diagnostic output
 
@@ -510,8 +570,8 @@ interface is transmit-only and intended for development diagnostics.
 ## Memory
 
 The STM32F407VET6 provides 512 KiB internal Flash, 128 KiB ordinary SRAM, and
-64 KiB CPU-only CCM RAM. The current build uses approximately 327 KiB of
-Flash, 116 KiB of ordinary static SRAM, and 62 KiB of CCM RAM. CCM contains
+64 KiB CPU-only CCM RAM. The current build uses approximately 324 KiB of
+Flash, 122 KiB of ordinary static SRAM, and 62 KiB of CCM RAM. CCM contains
 the Mbed TLS allocation arena; the mutable trust-store snapshot remains in
 ordinary SRAM so certificate validation can use the largest practical
 contiguous TLS arena.
@@ -532,6 +592,8 @@ packet buffers, and every other DMA target must remain in ordinary SRAM.
 - `Middlewares/` — imported lwIP and Mbed TLS source distributions
 - `tools/` — credential-generation and conversion utilities
 - `test/postman/` — management API integration collection
+- `test/callback/` — callback target-hardware regression procedure
+- `test/factory_reset/` — destructive factory-reset regression procedure
 
 Vendor source trees remain intact. The Makefile selects only the modules used
 by the firmware.

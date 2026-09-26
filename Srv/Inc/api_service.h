@@ -13,6 +13,11 @@
 
 #include "main.h"
 
+/**
+  * @brief Create the statically allocated HTTPS management API task.
+  * @retval (Platform_StatusTypeDef) PLATFORM_STATUS_OK when task creation
+  *         succeeds.
+  */
 Platform_StatusTypeDef ApiService_Init(void);
 
 #endif /* API_SERVICE_H */

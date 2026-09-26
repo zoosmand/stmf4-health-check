@@ -116,6 +116,19 @@ static Platform_StatusTypeDef factoryReset_ErasePersistentData(void) {
     }
     IWDG->KR = 0xAAAAU;
   }
+  const uint32_t callbackSectors[] = {
+    FLASH_LAYOUT_CALLBACK_CONFIG_SECTOR_A,
+    FLASH_LAYOUT_CALLBACK_CONFIG_SECTOR_B,
+  };
+  for (size_t index = 0U;
+       index < (sizeof(callbackSectors) / sizeof(callbackSectors[0]));
+       ++index) {
+    if ((W25Q64_EraseSector(callbackSectors[index]) != PLATFORM_STATUS_OK)
+        || (factoryReset_VerifyErased(callbackSectors[index])
+            != PLATFORM_STATUS_OK)) {
+      return PLATFORM_STATUS_ERROR;
+    }
+  }
   return W25Q64_EraseSector(FLASH_LAYOUT_FACTORY_RESET_MARKER_SECTOR);
 }
 

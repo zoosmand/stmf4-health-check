@@ -26,6 +26,7 @@
 #define FLASH_CS_PIN       3U
 #define FLASH_CS_GPIO_PORT GPIOE
 
+/** @brief Stop normal execution after an unrecoverable startup/runtime fault. */
 void Error_Handler(void);
 
 #endif /* MAIN_H */

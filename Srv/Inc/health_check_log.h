@@ -52,6 +52,7 @@ typedef struct {
   uint8_t status;
 } HealthCheckLog_EntryTypeDef;
 
+/** @brief Scan both log sectors and recover the newest append position. */
 Platform_StatusTypeDef HealthCheckLog_Init(void);
 
 /**

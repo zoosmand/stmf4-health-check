@@ -1,5 +1,11 @@
 # Use cases
 
+These procedures supplement the architecture and API reference in
+[README.md](README.md). They assume that the device is reachable over HTTPS and
+that `$TOKEN` contains the newest access token for an administrator session.
+Login and refresh rotate that account's token pair, so an older access token
+must not be reused.
+
 ## Add a Let's Encrypt trust anchor
 
 Use this procedure when an HTTPS resource presents a certificate chain rooted
