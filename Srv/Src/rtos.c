@@ -23,6 +23,8 @@
 #include "FreeRTOS.h"
 #include "api_service.h"
 #include "buzzer_service.h"
+#include "callback_config.h"
+#include "callback_service.h"
 #include "factory_reset_service.h"
 #include "health_check_config.h"
 #include "health_check_log.h"
@@ -107,6 +109,7 @@ static void rtos_StartupTask(void* argument) {
   if (FactoryResetService_Recover() != PLATFORM_STATUS_OK)
     Error_Handler();
   if ((TlsTrustStore_Init() != PLATFORM_STATUS_OK)
+      || (CallbackConfig_Init() != PLATFORM_STATUS_OK)
       || (HealthCheckConfig_Init() != PLATFORM_STATUS_OK)
       || (HealthCheckLog_Init() != PLATFORM_STATUS_OK)
       || (TlsServerCredentials_Init() != PLATFORM_STATUS_OK)) {
@@ -114,6 +117,7 @@ static void rtos_StartupTask(void* argument) {
   }
 
   if ((BuzzerService_Init() != SUCCESS)
+      || (CallbackService_Init() != SUCCESS)
       || (ApiService_Init() != PLATFORM_STATUS_OK)
       || (TemperatureService_Init() != SUCCESS)
       || (TimeService_Init() != SUCCESS)

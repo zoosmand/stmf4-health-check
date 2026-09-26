@@ -37,6 +37,7 @@ Project documentation:
 - Passive-buzzer alerts for failed resource checks
 - Human-like heartbeat indication on the first onboard user LED
 - Recoverable physical-button factory reset with a cancellation window
+- Configurable asynchronous HTTPS result callbacks using GET or JSON POST
 - Diagnostic `printf()` output through the onboard RS485 interface
 - Device-specific locally administered MAC address derived from the STM32 UID
 
@@ -199,6 +200,41 @@ returns the fifty newest records through `GET /api/v1/health-check/logs`:
 The monotonically increasing `sequence` remains the reliable ordering key when
 an early record was written before RTC synchronization.
 
+### Outbound result callback
+
+Every completed health check is offered to a three-entry, non-blocking queue.
+A dedicated static callback task delivers queued results without delaying the
+health-check loop. When the queue is full, the oldest undelivered result is
+dropped in favor of the newest one. Callback delivery shares the serialized
+TLS allocator with the management server and health checks.
+
+The callback is disabled by default. Its initial target is
+`https://loopback.intraclear.com/`, using trust-anchor ID `0`. Configure the
+correct trust anchor for the target before enabling it. `POST` sends exactly
+four JSON keys:
+
+```json
+{"resource":0,"status":"ok","http_status":200,"elapsed_ms":845}
+```
+
+`GET` appends the same four values as query parameters. `resource` is the
+zero-based health-check configuration slot and `status` is either `ok` or
+`failed`. The callback reads only the bounded HTTP response status line.
+
+Read or replace its persistent configuration with:
+
+```http
+GET /api/v1/callback/config
+PUT /api/v1/callback/config
+```
+
+Example update body:
+
+```json
+{"enabled":true,"method":"POST","host":"loopback.intraclear.com",
+ "port":443,"path":"/","trust_anchor_id":1}
+```
+
 ## Management API
 
 The device serves a bounded JSON API over TLS 1.3 on TCP port 443. Except for
@@ -272,6 +308,8 @@ development.
 | `PUT` | `/api/v1/health-check/resources/{index}` | Administrator bearer | Update a resource; omitted fields retain their values. |
 | `DELETE` | `/api/v1/health-check/resources/{index}` | Administrator bearer | Clear a resource slot; a later resource may reuse its index. |
 | `GET` | `/api/v1/health-check/logs` | Any authenticated bearer | Return the fifty newest completed checks. |
+| `GET` | `/api/v1/callback/config` | Any authenticated bearer | Read outbound callback configuration. |
+| `PUT` | `/api/v1/callback/config` | Administrator bearer | Update outbound callback configuration. |
 | `GET` | `/api/v1/temperature` | Any authenticated bearer | Return the latest DS18B20 readings. |
 | `GET` | `/api/v1/rtc` | Any authenticated bearer | Return UTC time and synchronization state. |
 
@@ -430,6 +468,7 @@ initialization so the device remains deselected during startup.
 | Health-check result log | 2 | Wear-aware append-only ring. |
 | TLS client trust anchors | 4 | Two-sector A/B banks updated on CA changes. |
 | Factory-reset recovery marker | 1 | Verified before reset-owned sectors are erased. |
+| Callback configuration | 2 | A/B transactional snapshot of callback settings. |
 
 An A/B store writes and verifies a complete snapshot in the inactive sector
 before making it active, protecting infrequently changed data from power loss

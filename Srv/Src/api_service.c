@@ -22,6 +22,7 @@
 
 #include "FreeRTOS.h"
 #include "auth_service.h"
+#include "callback_config.h"
 #include "ds18b20.h"
 #include "health_check_config.h"
 #include "health_check_log.h"
@@ -874,7 +875,8 @@ static int apiService_Dispatch(
     if (principal.role != USER_ROLE_ADMINISTRATOR)
       return apiService_Error(ssl, 403, "Forbidden", "forbidden");
     for (uint8_t id = 0U; id <= TLS_TRUST_STORE_MAX_PERSISTED; ++id) {
-      if (HealthCheckConfig_IsTrustAnchorInUse(id) != 0U)
+      if ((HealthCheckConfig_IsTrustAnchorInUse(id) != 0U)
+          || (CallbackConfig_IsTrustAnchorInUse(id) != 0U))
         return apiService_Error(
           ssl, 409, "Conflict", "trust_anchor_in_use"
         );
@@ -910,7 +912,8 @@ static int apiService_Dispatch(
     }
     uint8_t id = (uint8_t)idValue;
     if (deletingTrustAnchor != 0U) {
-      if (HealthCheckConfig_IsTrustAnchorInUse(id) != 0U)
+      if ((HealthCheckConfig_IsTrustAnchorInUse(id) != 0U)
+          || (CallbackConfig_IsTrustAnchorInUse(id) != 0U))
         return apiService_Error(
           ssl, 409, "Conflict", "trust_anchor_in_use"
         );
@@ -935,6 +938,72 @@ static int apiService_Dispatch(
       (unsigned int)id
     );
     return apiService_Respond(ssl, 200, "OK", json);
+  }
+
+  if ((strcmp(request->method, "GET") == 0)
+      && (strcmp(request->path, "/api/v1/callback/config") == 0)) {
+    CallbackConfig_TypeDef config;
+    CallbackConfig_Get(&config);
+    char json[320];
+    (void)snprintf(
+      json, sizeof(json),
+      "{\"enabled\":%s,\"method\":\"%s\",\"host\":\"%s\","
+      "\"port\":%u,\"path\":\"%s\",\"trust_anchor_id\":%u}",
+      config.enabled != 0U ? "true" : "false",
+      config.method == CALLBACK_METHOD_POST ? "POST" : "GET",
+      config.host, (unsigned int)config.port, config.path,
+      (unsigned int)config.trustAnchorId
+    );
+    return apiService_Respond(ssl, 200, "OK", json);
+  }
+
+  if ((strcmp(request->method, "PUT") == 0)
+      && (strcmp(request->path, "/api/v1/callback/config") == 0)) {
+    if (principal.role != USER_ROLE_ADMINISTRATOR)
+      return apiService_Error(ssl, 403, "Forbidden", "forbidden");
+    CallbackConfig_TypeDef config;
+    CallbackConfig_Get(&config);
+    char method[8];
+    uint32_t port = config.port;
+    uint32_t trustAnchor = config.trustAnchorId;
+    uint8_t enabled = config.enabled;
+    (void)strncpy(
+      method, config.method == CALLBACK_METHOD_POST ? "POST" : "GET",
+      sizeof(method) - 1U
+    );
+    method[sizeof(method) - 1U] = '\0';
+    (void)apiService_JsonBoolean(request->body, "enabled", &enabled);
+    (void)apiService_JsonString(
+      request->body, "method", method, sizeof(method)
+    );
+    (void)apiService_JsonString(
+      request->body, "host", config.host, sizeof(config.host)
+    );
+    (void)apiService_JsonString(
+      request->body, "path", config.path, sizeof(config.path)
+    );
+    (void)apiService_JsonNumber(request->body, "port", &port);
+    (void)apiService_JsonNumber(
+      request->body, "trust_anchor_id", &trustAnchor
+    );
+    if ((strcmp(method, "GET") != 0) && (strcmp(method, "POST") != 0))
+      return apiService_Error(ssl, 400, "Bad Request", "invalid_method");
+    if ((port == 0U) || (port > 65535U))
+      return apiService_Error(ssl, 400, "Bad Request", "invalid_port");
+    if ((trustAnchor > TLS_TRUST_STORE_MAX_PERSISTED)
+        || (TlsTrustStore_Exists((uint8_t)trustAnchor) == 0U)) {
+      return apiService_Error(
+        ssl, 400, "Bad Request", "invalid_trust_anchor"
+      );
+    }
+    config.enabled = enabled;
+    config.method = strcmp(method, "POST") == 0
+      ? CALLBACK_METHOD_POST : CALLBACK_METHOD_GET;
+    config.port = (uint16_t)port;
+    config.trustAnchorId = (uint8_t)trustAnchor;
+    if (CallbackConfig_Set(&config) != PLATFORM_STATUS_OK)
+      return apiService_Error(ssl, 400, "Bad Request", "invalid_request");
+    return apiService_Respond(ssl, 200, "OK", "{\"updated\":true}");
   }
 
   if ((strcmp(request->method, "GET") == 0)

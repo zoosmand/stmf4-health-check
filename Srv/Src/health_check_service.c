@@ -22,6 +22,7 @@
 
 #include "FreeRTOS.h"
 #include "buzzer_service.h"
+#include "callback_service.h"
 #include "health_check_config.h"
 #include "health_check_log.h"
 #include "lwip.h"
@@ -84,6 +85,8 @@ static void healthCheckService_CheckResource(
 
   if ((resourceHealthy == 0U) && (BuzzerService_Alert() != SUCCESS))
     printf("Buzzer alert scheduling failed.\r\n");
+
+  CallbackService_Enqueue(index, resourceHealthy, &result);
 
   (void)HealthCheckLog_Append(index, &result);
 }

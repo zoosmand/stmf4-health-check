@@ -234,14 +234,20 @@ static int tlsTransport_ReadStatus(
   return 0;
 }
 
-TlsTransport_StatusTypeDef TlsTransport_Head(
+TlsTransport_StatusTypeDef TlsTransport_Request(
+  const char* method,
   const char* host,
   uint16_t port,
   const char* resource,
   uint8_t trustAnchorId,
+  const char* body,
+  const char* contentType,
   TlsTransport_ResultTypeDef* result
 ) {
-  if ((host == NULL) || (resource == NULL) || (result == NULL))
+  if ((method == NULL) || (host == NULL) || (resource == NULL)
+      || (body == NULL) || (result == NULL)
+      || ((strcmp(method, "HEAD") != 0) && (strcmp(method, "GET") != 0)
+          && (strcmp(method, "POST") != 0)))
     return TLS_TRANSPORT_CONFIG_ERROR;
 
   memset(result, 0, sizeof(*result));
@@ -349,17 +355,29 @@ TlsTransport_StatusTypeDef TlsTransport_Head(
   result->tlsVersion = mbedtls_ssl_get_version(&ssl);
   result->cipherSuite = mbedtls_ssl_get_ciphersuite(&ssl);
 
-  char request[256];
-  int requestLength = snprintf(
-    request,
-    sizeof(request),
-    "HEAD %s HTTP/1.1\r\n"
-    "Host: %s\r\n"
-    "Connection: close\r\n"
-    "User-Agent: stm32-health-check/1\r\n\r\n",
-    resource,
-    host
-  );
+  char request[768];
+  size_t bodyLength = strlen(body);
+  int requestLength;
+  if (bodyLength != 0U) {
+    if (contentType == NULL) {
+      detail = MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
+      goto cleanup;
+    }
+    requestLength = snprintf(
+      request, sizeof(request),
+      "%s %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n"
+      "User-Agent: stm32-health-check/1\r\nContent-Type: %s\r\n"
+      "Content-Length: %lu\r\n\r\n%s",
+      method, resource, host, contentType, (unsigned long)bodyLength, body
+    );
+  } else {
+    requestLength = snprintf(
+      request, sizeof(request),
+      "%s %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n"
+      "User-Agent: stm32-health-check/1\r\n\r\n",
+      method, resource, host
+    );
+  }
   if ((requestLength <= 0)
       || ((size_t)requestLength >= sizeof(request))) {
     detail = MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
@@ -400,4 +418,16 @@ cleanup:
   mbedtls_entropy_free(&entropy);
   TlsPlatform_Unlock();
   return result->status;
+}
+
+TlsTransport_StatusTypeDef TlsTransport_Head(
+  const char* host,
+  uint16_t port,
+  const char* resource,
+  uint8_t trustAnchorId,
+  TlsTransport_ResultTypeDef* result
+) {
+  return TlsTransport_Request(
+    "HEAD", host, port, resource, trustAnchorId, "", NULL, result
+  );
 }
