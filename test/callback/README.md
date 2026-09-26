@@ -1,6 +1,9 @@
 # Outbound callback regression checks
 
 Run these checks on target hardware with a trusted HTTPS capture endpoint.
+Configure the device through the management endpoints documented in the main
+[README](../../README.md), and use a dedicated trust anchor appropriate for the
+capture endpoint.
 
 1. Verify that a factory-fresh device reports the default callback target but
    keeps callback delivery disabled.

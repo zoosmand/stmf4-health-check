@@ -37,6 +37,7 @@ typedef enum {
   TLS_SERVER_CREDENTIALS_STATUS_STORAGE_ERROR
 } TlsServerCredentials_StatusTypeDef;
 
+/** @brief Load the newest verified credential pair or compiled defaults. */
 Platform_StatusTypeDef TlsServerCredentials_Init(void);
 
 /**

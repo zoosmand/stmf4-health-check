@@ -28,6 +28,12 @@ static uint8_t callbackQueueStorage[
 ];
 static QueueHandle_t callbackQueue;
 
+/**
+  * @brief Consume queued check results and deliver enabled callbacks.
+  * @param argument (void*) Unused FreeRTOS task argument.
+  * @note Delivery may block on bounded DNS/TCP/TLS timeouts, but never blocks
+  *       the health-check producer because events cross a finite queue.
+  */
 static void callbackService_Task(void* argument) {
   (void)argument;
   CallbackService_EventTypeDef event;

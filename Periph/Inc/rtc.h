@@ -35,10 +35,19 @@ typedef struct {
   uint8_t second;
 } Rtc_DateTimeTypeDef;
 
+/** @brief Initialize the LSE-backed RTC while preserving valid backup time. */
 Platform_StatusTypeDef Rtc_Init(void);
+
+/** @brief Set UTC time and mark the RTC synchronized. */
 Platform_StatusTypeDef Rtc_SetUnixTime(uint32_t unixTime);
+
+/** @brief Read UTC as Unix seconds into non-null output storage. */
 Platform_StatusTypeDef Rtc_GetUnixTime(uint32_t* unixTime);
+
+/** @brief Read the current UTC calendar fields. */
 Platform_StatusTypeDef Rtc_GetDateTime(Rtc_DateTimeTypeDef* dateTime);
+
+/** @brief Return nonzero when retained or NTP-provided time is trustworthy. */
 uint8_t Rtc_IsSynchronized(void);
 
 #endif /* RTC_H */

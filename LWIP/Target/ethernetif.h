@@ -24,9 +24,16 @@
 #include "lwip/err.h"
 #include "lwip/netif.h"
 
+/** @brief Initialize the STM32 MAC, DMA rings, PHY, and lwIP netif fields. */
 err_t ethernetif_init(struct netif* netif);
+
+/** @brief Drain received Ethernet frames into lwIP from network-task context. */
 void ethernetif_input(struct netif* netif);
+
+/** @brief Poll DP83848 link state and apply negotiated MAC speed and duplex. */
 void ethernet_link_check_state(struct netif* netif);
+
+/** @brief Provide lwIP with the wrapping platform time in milliseconds. */
 u32_t sys_now(void);
 
 #endif /* ETHERNETIF_H */

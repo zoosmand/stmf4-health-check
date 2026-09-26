@@ -3,6 +3,8 @@
 Run these checks on target hardware after changing the factory-reset, buzzer,
 watchdog, or W25Q64 code. Capture the RS485 diagnostic output and verify that
 the default watchdog task remains healthy throughout each non-resetting case.
+The user-facing reset sequence and persistent-store overview are documented in
+the main [README](../../README.md).
 
 ## Button timing
 
@@ -23,9 +25,10 @@ the default watchdog task remains healthy throughout each non-resetting case.
    other flash transaction from interleaving with marker creation and erasure.
 2. Inject erase, program, read, and erased-data verification failures. Verify
    that the recovery marker is not cleared after any reset-owned sector fails.
-3. Remove power after marker verification and after each of the 15 data-sector
-   erases. On every reboot, verify that recovery erases and verifies all reset
-   sectors before any persistent store is opened.
+3. Remove power after marker verification and after each of the 17 data-sector
+   erases: the 15 original persistent-store sectors followed by the two
+   callback-configuration sectors. On every reboot, verify that recovery erases
+   and verifies all reset sectors before any persistent store is opened.
 
 ## Buzzer concurrency
 
@@ -39,4 +42,6 @@ the default watchdog task remains healthy throughout each non-resetting case.
 
 After a completed or power-loss-recovered reset, confirm that users,
 health-check configuration and logs, trust anchors, and uploaded TLS server
-credentials are gone, while compiled factory defaults are recreated normally.
+credentials are gone, callback delivery is disabled with its compiled default
+target restored, and all other compiled factory defaults are recreated
+normally.

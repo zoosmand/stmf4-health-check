@@ -43,7 +43,20 @@ typedef struct {
   const char* cipherSuite;
 } TlsTransport_ResultTypeDef;
 
-/** @brief Perform one bounded authenticated HEAD, GET, or POST request. */
+/**
+  * @brief Perform one bounded authenticated HEAD, GET, or POST request.
+  * @param method (const char*) One of "HEAD", "GET", or "POST".
+  * @param host (const char*) DNS name used for connection, SNI, and validation.
+  * @param port (uint16_t) Nonzero TCP destination port.
+  * @param resource (const char*) Request target beginning with '/'.
+  * @param trustAnchorId (uint8_t) Existing persistent CA slot.
+  * @param body (const char*) POST body, or an empty string for HEAD/GET.
+  * @param contentType (const char*) POST media type, otherwise null.
+  * @param result (TlsTransport_ResultTypeDef*) Detailed result output.
+  * @retval (TlsTransport_StatusTypeDef) Final bounded transport stage.
+  * @note Serializes access to the shared Mbed TLS allocator and may block for
+  *       DNS, TCP, TLS, and HTTP timeouts; call only from task context.
+  */
 TlsTransport_StatusTypeDef TlsTransport_Request(
   const char* method,
   const char* host,

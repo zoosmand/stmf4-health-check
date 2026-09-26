@@ -59,6 +59,7 @@ typedef struct {
   char path[HEALTH_CHECK_CONFIG_PATH_SIZE];
 } HealthCheckConfig_ResourceTypeDef;
 
+/** @brief Load the newest valid configuration or persist compiled defaults. */
 Platform_StatusTypeDef HealthCheckConfig_Init(void);
 
 /**

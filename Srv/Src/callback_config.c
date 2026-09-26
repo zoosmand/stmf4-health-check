@@ -31,6 +31,7 @@ static uint32_t activeAddress;
 static StaticSemaphore_t callbackConfigMutexControlBlock;
 static SemaphoreHandle_t callbackConfigMutex;
 
+/** @brief Accept bounded DNS hostnames without URI syntax or whitespace. */
 static uint8_t callbackConfig_HostValid(const char* host) {
   if ((host == NULL) || (host[0] == '\0'))
     return 0U;
@@ -48,6 +49,7 @@ static uint8_t callbackConfig_HostValid(const char* host) {
   return 0U;
 }
 
+/** @brief Accept a bounded visible-ASCII origin-form request target. */
 static uint8_t callbackConfig_PathValid(const char* path) {
   if ((path == NULL) || (path[0] != '/'))
     return 0U;
@@ -64,6 +66,7 @@ static uint8_t callbackConfig_PathValid(const char* path) {
   return 0U;
 }
 
+/** @brief Calculate the snapshot CRC-32 used for power-loss recovery. */
 static uint32_t callbackConfig_Crc(const void* data, size_t length) {
   const uint8_t* bytes = data;
   uint32_t crc = 0xFFFFFFFFUL;
@@ -75,6 +78,7 @@ static uint32_t callbackConfig_Crc(const void* data, size_t length) {
   return ~crc;
 }
 
+/** @brief Validate every externally configurable callback field. */
 static uint8_t callbackConfig_FieldsValid(const CallbackConfig_TypeDef* value) {
   return ((value != NULL) && (value->enabled <= 1U)
       && (value->method <= CALLBACK_METHOD_POST) && (value->port != 0U)
@@ -83,6 +87,7 @@ static uint8_t callbackConfig_FieldsValid(const CallbackConfig_TypeDef* value) {
       && (callbackConfig_PathValid(value->path) != 0U)) ? 1U : 0U;
 }
 
+/** @brief Validate snapshot identity, fields, and integrity checksum. */
 static uint8_t callbackConfig_Valid(const CallbackConfig_SnapshotTypeDef* value) {
   return ((value->magic == CALLBACK_CONFIG_MAGIC)
       && (value->version == CALLBACK_CONFIG_VERSION)
@@ -92,6 +97,13 @@ static uint8_t callbackConfig_Valid(const CallbackConfig_SnapshotTypeDef* value)
       ))) ? 1U : 0U;
 }
 
+/**
+  * @brief Write and verify the inactive A/B sector before publishing it.
+  * @param candidate (CallbackConfig_SnapshotTypeDef*) Mutable next snapshot.
+  * @retval (Platform_StatusTypeDef) PLATFORM_STATUS_OK after read-back verify.
+  * @note Caller must hold callbackConfigMutex and the W25Q64 driver serializes
+  *       the underlying erase/program/read operations.
+  */
 static Platform_StatusTypeDef callbackConfig_Save(
   CallbackConfig_SnapshotTypeDef* candidate
 ) {

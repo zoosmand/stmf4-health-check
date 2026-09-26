@@ -181,6 +181,9 @@ static int apiService_ReadRequest(
   if (bearer != NULL) {
     bearer += 24U;
     char* end = strstr(bearer, "\r\n");
+    /* headerEnd currently points at the NUL temporarily replacing the first
+       CR of the final CRLFCRLF. Use that known boundary when Authorization is
+       the last header field. */
     if (end == NULL)
       end = headerEnd;
     size_t length = (size_t)(end - bearer);
