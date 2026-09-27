@@ -41,6 +41,13 @@ typedef enum {
   AUTH_SERVICE_STATUS_STORAGE_ERROR
 } AuthService_StatusTypeDef;
 
+/**
+  * @brief Newly issued opaque access and refresh credentials.
+  * @param accessToken (char[AUTH_SERVICE_TOKEN_TEXT_SIZE]) Access token text.
+  * @param refreshToken (char[AUTH_SERVICE_TOKEN_TEXT_SIZE]) Refresh token text.
+  * @param accessExpiresIn (uint32_t) Access-token lifetime in seconds.
+  * @param refreshExpiresIn (uint32_t) Refresh-token lifetime in seconds.
+  */
 typedef struct {
   char accessToken[AUTH_SERVICE_TOKEN_TEXT_SIZE];
   char refreshToken[AUTH_SERVICE_TOKEN_TEXT_SIZE];
@@ -48,11 +55,13 @@ typedef struct {
   uint32_t refreshExpiresIn;
 } AuthService_TokenPairTypeDef;
 
+/** @brief Authenticated username and authorization role. */
 typedef struct {
   char username[USER_STORE_USERNAME_SIZE];
   UserStore_RoleTypeDef role;
 } AuthService_PrincipalTypeDef;
 
+/** @brief Initialize persistent users and clear all in-memory sessions. */
 AuthService_StatusTypeDef AuthService_Init(void);
 
 /**
@@ -70,21 +79,53 @@ AuthService_StatusTypeDef AuthService_VerifyMasterPassword(
   size_t passwordLength
 );
 
+/**
+  * @brief Verify credentials and replace the user's active token pair.
+  * @param username (const char*) Null-terminated account name.
+  * @param password (const uint8_t*) Non-null password bytes.
+  * @param passwordLength (size_t) Password length in bytes.
+  * @param tokens (AuthService_TokenPairTypeDef*) Issued token output.
+  */
 AuthService_StatusTypeDef AuthService_Login(
   const char* username,
   const uint8_t* password,
   size_t passwordLength,
   AuthService_TokenPairTypeDef* tokens
 );
+
+/**
+  * @brief Rotate the session identified by a valid refresh token.
+  * @param refreshToken (const char*) Null-terminated 64-character token.
+  * @param tokens (AuthService_TokenPairTypeDef*) Rotated token output.
+  */
 AuthService_StatusTypeDef AuthService_Refresh(
   const char* refreshToken,
   AuthService_TokenPairTypeDef* tokens
 );
+
+/**
+  * @brief Validate an access token and return its current principal.
+  * @param accessToken (const char*) Null-terminated 64-character token.
+  * @param principal (AuthService_PrincipalTypeDef*) Authenticated output.
+  */
 AuthService_StatusTypeDef AuthService_Authorize(
   const char* accessToken,
   AuthService_PrincipalTypeDef* principal
 );
+
+/** @brief Revoke the session selected by a valid access token. */
 AuthService_StatusTypeDef AuthService_Revoke(const char* accessToken);
+
+/**
+  * @brief Create or replace a persistent non-master account.
+  * @param actor (const AuthService_PrincipalTypeDef*) Administrator principal.
+  * @param username (const char*) Target account name.
+  * @param password (const uint8_t*) New password bytes.
+  * @param passwordLength (size_t) Password length in bytes.
+  * @param role (UserStore_RoleTypeDef) New authorization role.
+  * @param enabled (uint8_t) Nonzero to permit login.
+  * @param mustExist (uint8_t) Nonzero for update-only behavior.
+  */
 AuthService_StatusTypeDef AuthService_PutUser(
   const AuthService_PrincipalTypeDef* actor,
   const char* username,
@@ -94,10 +135,20 @@ AuthService_StatusTypeDef AuthService_PutUser(
   uint8_t enabled,
   uint8_t mustExist
 );
+
+/** @brief Delete a persistent account and revoke its active session. */
 AuthService_StatusTypeDef AuthService_DeleteUser(
   const AuthService_PrincipalTypeDef* actor,
   const char* username
 );
+
+/**
+  * @brief List persistent accounts for an administrator.
+  * @param actor (const AuthService_PrincipalTypeDef*) Administrator principal.
+  * @param records (UserStore_RecordTypeDef*) Output array.
+  * @param capacity (size_t) Available record elements.
+  * @retval (size_t) Number of records copied; zero when unauthorized.
+  */
 size_t AuthService_ListUsers(
   const AuthService_PrincipalTypeDef* actor,
   UserStore_RecordTypeDef* records,

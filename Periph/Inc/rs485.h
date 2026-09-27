@@ -21,23 +21,23 @@
 #ifndef RS485_H
 #define RS485_H
 
-#include "stm32f4xx_hal.h"
+#include "platform.h"
 
 #include <stddef.h>
 #include <stdint.h>
 
 /**
   * @brief Initialize USART2 and the onboard RS485 transceiver control.
-  * @retval (HAL_StatusTypeDef) HAL_OK when the interface is ready.
+  * @retval (Platform_StatusTypeDef) PLATFORM_STATUS_OK when the interface is ready.
   */
-HAL_StatusTypeDef Rs485_Init(void);
+Platform_StatusTypeDef Rs485_Init(void);
 
 /**
   * @brief Transmit one complete buffer and then release the RS485 bus.
   * @param data (const uint8_t*) Buffer to transmit; must not be null.
   * @param length (size_t) Number of bytes to transmit, up to UINT16_MAX.
-  * @retval (HAL_StatusTypeDef) HAL status reported by the blocking transfer.
+  * @retval (Platform_StatusTypeDef) Result of the bounded blocking transfer.
   */
-HAL_StatusTypeDef Rs485_Transmit(const uint8_t* data, size_t length);
+Platform_StatusTypeDef Rs485_Transmit(const uint8_t* data, size_t length);
 
 #endif /* RS485_H */

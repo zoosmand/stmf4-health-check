@@ -40,6 +40,7 @@
 
 #include <stddef.h>
 #include <stdio.h>
+#include <string.h>
 
 #define HEALTH_CHECK_LOG_ERASED_SEQUENCE 0xFFFFFFFFUL
 
@@ -100,7 +101,7 @@ static void healthCheckLog_ScanSector(
   for (uint16_t slot = 0U; slot < HEALTH_CHECK_LOG_SLOTS_PER_SECTOR; ++slot) {
     healthCheckLog_RecordTypeDef record;
     uint32_t address = base + ((uint32_t)slot * sizeof(record));
-    if (W25Q64_Read(address, &record, sizeof(record)) != HAL_OK) {
+    if (W25Q64_Read(address, &record, sizeof(record)) != PLATFORM_STATUS_OK) {
       next = slot + 1U;
       continue;
     }
@@ -126,17 +127,17 @@ static void healthCheckLog_ScanSector(
 }
 
 static uint8_t healthCheckLog_RollToSector(uint8_t sector) {
-  if (W25Q64_EraseSector(healthCheckLog_SectorBase(sector)) != HAL_OK)
+  if (W25Q64_EraseSector(healthCheckLog_SectorBase(sector)) != PLATFORM_STATUS_OK)
     return 0U;
   activeSector = sector;
   nextSlot = 0U;
   return 1U;
 }
 
-HAL_StatusTypeDef HealthCheckLog_Init(void) {
+Platform_StatusTypeDef HealthCheckLog_Init(void) {
   logMutex = xSemaphoreCreateMutexStatic(&logMutexControlBlock);
   if (logMutex == NULL)
-    return HAL_ERROR;
+    return PLATFORM_STATUS_ERROR;
 
   uint16_t count[2];
   uint16_t available[2];
@@ -150,7 +151,7 @@ HAL_StatusTypeDef HealthCheckLog_Init(void) {
 
   if ((count[0] == 0U) && (count[1] == 0U)) {
     nextSequence = 1U;
-    return (healthCheckLog_RollToSector(0U) != 0U) ? HAL_OK : HAL_ERROR;
+    return (healthCheckLog_RollToSector(0U) != 0U) ? PLATFORM_STATUS_OK : PLATFORM_STATUS_ERROR;
   }
 
   uint8_t active = (lastSequence[0] >= lastSequence[1]) ? 0U : 1U;
@@ -158,26 +159,27 @@ HAL_StatusTypeDef HealthCheckLog_Init(void) {
     activeSector = active;
     nextSlot = available[active];
     nextSequence = lastSequence[active] + 1U;
-    return HAL_OK;
+    return PLATFORM_STATUS_OK;
   }
 
   nextSequence = lastSequence[active] + 1U;
-  return (healthCheckLog_RollToSector(active ^ 1U) != 0U) ? HAL_OK : HAL_ERROR;
+  return (healthCheckLog_RollToSector(active ^ 1U) != 0U) ? PLATFORM_STATUS_OK : PLATFORM_STATUS_ERROR;
 }
 
-HAL_StatusTypeDef HealthCheckLog_Append(
+Platform_StatusTypeDef HealthCheckLog_Append(
   uint8_t resourceIndex,
-  const TlsTransport_ResultTypeDef* result
+  const TlsTransport_ResultTypeDef* result,
+  HealthCheckLog_EntryTypeDef* entry
 ) {
-  if (result == NULL)
-    return HAL_ERROR;
+  if ((result == NULL) || (entry == NULL))
+    return PLATFORM_STATUS_ERROR;
   if (xSemaphoreTake(logMutex, portMAX_DELAY) != pdTRUE)
-    return HAL_ERROR;
+    return PLATFORM_STATUS_ERROR;
 
   if ((nextSlot >= HEALTH_CHECK_LOG_SLOTS_PER_SECTOR)
       && (healthCheckLog_RollToSector(activeSector ^ 1U) == 0U)) {
     (void)xSemaphoreGive(logMutex);
-    return HAL_ERROR;
+    return PLATFORM_STATUS_ERROR;
   }
 
   healthCheckLog_RecordTypeDef record = {
@@ -197,16 +199,23 @@ HAL_StatusTypeDef HealthCheckLog_Append(
 
   uint32_t address = healthCheckLog_SectorBase(activeSector)
     + ((uint32_t)nextSlot * sizeof(record));
-  HAL_StatusTypeDef status = W25Q64_Program(address, &record, sizeof(record));
-  if (status == HAL_OK) {
+  Platform_StatusTypeDef status = W25Q64_Program(address, &record, sizeof(record));
+  if (status == PLATFORM_STATUS_OK) {
     healthCheckLog_RecordTypeDef verification;
-    if ((W25Q64_Read(address, &verification, sizeof(verification)) != HAL_OK)
-        || (verification.sequence != record.sequence)
-        || (verification.crc != record.crc)) {
-      status = HAL_ERROR;
+    if ((W25Q64_Read(address, &verification, sizeof(verification)) != PLATFORM_STATUS_OK)
+        || (memcmp(&verification, &record, sizeof(record)) != 0)) {
+      status = PLATFORM_STATUS_ERROR;
+    } else {
+      entry->sequence = verification.sequence;
+      entry->timestampUnix = verification.timestampUnix;
+      entry->elapsedMs = verification.elapsedMs;
+      entry->detail = verification.detail;
+      entry->httpStatus = verification.httpStatus;
+      entry->resourceIndex = verification.resourceIndex;
+      entry->status = verification.status;
     }
   }
-  if (status != HAL_OK)
+  if (status != PLATFORM_STATUS_OK)
     printf("Health check log: record write failed; slot skipped.\r\n");
 
   /* Never retry the same slot: bits already programmed can't be rewritten
@@ -248,7 +257,7 @@ size_t HealthCheckLog_GetRecent(
       healthCheckLog_RecordTypeDef record;
       uint32_t address = healthCheckLog_SectorBase(sectors[pass])
         + ((uint32_t)remaining * sizeof(record));
-      if (W25Q64_Read(address, &record, sizeof(record)) != HAL_OK)
+      if (W25Q64_Read(address, &record, sizeof(record)) != PLATFORM_STATUS_OK)
         break;
       if ((record.sequence == HEALTH_CHECK_LOG_ERASED_SEQUENCE)
           || (record.crc != healthCheckLog_Crc(

@@ -59,7 +59,8 @@ typedef struct {
   char path[HEALTH_CHECK_CONFIG_PATH_SIZE];
 } HealthCheckConfig_ResourceTypeDef;
 
-HAL_StatusTypeDef HealthCheckConfig_Init(void);
+/** @brief Load the newest valid configuration or persist compiled defaults. */
+Platform_StatusTypeDef HealthCheckConfig_Init(void);
 
 /**
   * @brief Return the current health-check period.
@@ -142,11 +143,5 @@ HealthCheckConfig_StatusTypeDef HealthCheckConfig_DeleteResource(
   * @retval (uint8_t) Nonzero when at least one resource uses the ID.
   */
 uint8_t HealthCheckConfig_IsTrustAnchorInUse(uint8_t trustAnchorId);
-
-/**
-  * @brief Reassign every resource to factory trust anchor ID 0.
-  * @retval (HealthCheckConfig_StatusTypeDef) Persistence result.
-  */
-HealthCheckConfig_StatusTypeDef HealthCheckConfig_ResetTrustAnchors(void);
 
 #endif /* HEALTH_CHECK_CONFIG_H */

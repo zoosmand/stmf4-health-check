@@ -70,7 +70,7 @@ Lwip_StatusTypeDef Lwip_Init(void) {
 void Lwip_Process(void) {
   ethernetif_input(&gnetif);
 
-  uint32_t now = HAL_GetTick();
+  uint32_t now = Platform_GetTick();
   if ((now - lwipLinkPollTick) < LWIP_LINK_POLL_PERIOD_MS)
     return;
 
@@ -111,7 +111,7 @@ static void lwip_CoreInit(void* argument) {
 
   netif_set_default(&gnetif);
   netif_set_link_callback(&gnetif, lwip_LinkStatusChanged);
-  lwipDhcpWaitStartTick = HAL_GetTick();
+  lwipDhcpWaitStartTick = Platform_GetTick();
   lwipNetworkConfigurationReported = 0U;
   lwipStaticFallbackActive = 0U;
   lwipNetworkReady = 0U;
@@ -129,7 +129,7 @@ static void lwip_CoreInit(void* argument) {
 
 /**
   * @brief Process DHCP completion and static fallback from the core lock.
-  * @param now (uint32_t) Current HAL tick in milliseconds.
+  * @param now (uint32_t) Current platform tick in milliseconds.
   */
 static void lwip_ProcessConfiguration(uint32_t now) {
   if (!netif_is_link_up(&gnetif)) {
@@ -164,7 +164,7 @@ static void lwip_LinkStatusChanged(struct netif* netif) {
   }
 
   dhcp_stop(netif);
-  lwipDhcpWaitStartTick = HAL_GetTick();
+  lwipDhcpWaitStartTick = Platform_GetTick();
   lwipNetworkConfigurationReported = 0U;
   lwipStaticFallbackActive = 0U;
   lwipNetworkReady = 0U;
@@ -181,7 +181,7 @@ static void lwip_StartDhcp(void) {
     IP4_ADDR_ANY4
   );
   dns_setserver(0U, IP_ADDR_ANY);
-  lwipDhcpWaitStartTick = HAL_GetTick();
+  lwipDhcpWaitStartTick = Platform_GetTick();
   lwipStaticFallbackActive = 0U;
   lwipNetworkReady = 0U;
   if (dhcp_start(&gnetif) != ERR_OK)

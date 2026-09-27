@@ -119,7 +119,7 @@ static void timeService_Task(void* argument) {
       if ((syncState == TIME_SYNC_RECEIVED) && (receivedUnixTime != 0U)) {
         uint32_t unixTime = receivedUnixTime;
         receivedUnixTime = 0U;
-        if (Rtc_SetUnixTime(unixTime) == HAL_OK) {
+        if (Rtc_SetUnixTime(unixTime) == PLATFORM_STATUS_OK) {
           printf("NTP: synchronized with " TIME_NTP_SERVER ".\r\n");
           syncState = TIME_SYNC_IDLE;
           retrySeconds = TIME_NTP_RESYNC_SECONDS;
@@ -157,7 +157,7 @@ static void timeService_Task(void* argument) {
     if (Rtc_IsSynchronized()) {
       if (reportSeconds >= TIME_REPORT_SECONDS) {
         Rtc_DateTimeTypeDef dateTime;
-        if (Rtc_GetDateTime(&dateTime) == HAL_OK) {
+        if (Rtc_GetDateTime(&dateTime) == PLATFORM_STATUS_OK) {
           printf("RTC UTC: %04u-%02u-%02u %02u:%02u:%02u\r\n",
             dateTime.year, dateTime.month, dateTime.day,
             dateTime.hour, dateTime.minute, dateTime.second);

@@ -15,10 +15,13 @@ Project documentation:
 - [Development rules](docs/DEVELOPMENT_RULES.md)
 - [Naming conventions](docs/NAMING_CONVENTIONS.md)
 - [Supplying ignored source trees in forks](docs/IGNORED_SOURCES.md)
+- [Callback hardware regression checks](test/callback/README.md)
+- [Factory-reset hardware regression checks](test/factory_reset/README.md)
 
 ## Features
 
 - STM32F407VET6 running at 168 MHz from a 25 MHz HSE
+- CMSIS register-level peripheral drivers with no STM32 HAL dependency
 - FreeRTOS with statically allocated application tasks
 - lwIP 2.1.2 with a dedicated TCP/IP core thread
 - Integrated Ethernet MAC, RMII, and DP83848 PHY
@@ -34,6 +37,9 @@ Project documentation:
 - W25Q64JV NOR Flash interface on SPI2
 - DS18B20 support for up to six sensors on the dedicated one-wire connector
 - Passive-buzzer alerts for failed resource checks
+- Human-like heartbeat indication on the first onboard user LED
+- Recoverable physical-button factory reset with a cancellation window
+- Configurable asynchronous HTTPS result callbacks using GET or JSON POST
 - Diagnostic `printf()` output through the onboard RS485 interface
 - Device-specific locally administered MAC address derived from the STM32 UID
 
@@ -53,6 +59,10 @@ into two phases:
 The principal services are:
 
 - **Default task** — starts and refreshes the independent watchdog.
+- **Heartbeat service** — drives LED1 with two short pulses in a repeating
+  1.22-second pattern.
+- **Factory-reset service** — monitors S1 and securely restores persistent
+  configuration to its compiled defaults.
 - **Network task** — initializes lwIP, drains Ethernet frames, monitors the PHY,
   and maintains DHCP or fallback addressing.
 - **Time service** — synchronizes the hardware RTC with `pool.ntp.org` and
@@ -61,6 +71,8 @@ The principal services are:
   every seven seconds.
 - **Health-check service** — performs configured HTTPS checks and records the
   results.
+- **Callback service** — asynchronously delivers completed check results using
+  the configured HTTPS GET or JSON POST request.
 - **Management API service** — accepts authenticated TLS 1.3 API requests on
   TCP port 443.
 
@@ -68,8 +80,8 @@ lwIP uses `NO_SYS=0` and a native FreeRTOS system port. Ethernet frames are
 handled by the network task, while protocol processing and raw API callbacks
 run in lwIP's TCP/IP core thread.
 
-SysTick remains the STM32 HAL timebase. Its interrupt increments the HAL tick
-and, after the scheduler starts, also dispatches the FreeRTOS tick. FreeRTOS
+SysTick supplies the platform millisecond timebase. Its interrupt increments
+the platform tick and, after the scheduler starts, also dispatches the FreeRTOS tick. FreeRTOS
 provides the SVC and PendSV handlers through its Cortex-M4F port.
 
 The watchdog uses the LSI clock, prescaler 256, and reload value 4095, giving a
@@ -115,15 +127,15 @@ checked once per configured period, from 60 through 1800 seconds. The default
 period is 60 seconds and a freshly provisioned device contains one resource:
 `https://pgw.intraclear.com/`.
 
-Factory anchor ID `0` contains the compiled USERTrust RSA Certification
-Authority required by the default target. Administrators can add as many as
-three DER-encoded root CA certificates to NOR Flash and select one through each
-resource's `trust_anchor_id`. Only the selected anchor is parsed for a check,
-keeping runtime memory bounded. Correct RTC time remains mandatory for
-certificate validation.
+On first provisioning, mutable anchor slot `0` contains the SSL.com TLS RSA
+Root CA 2022 used by the default target. All four slots, IDs `0` through `3`,
+are stored in NOR Flash and may be replaced or deleted. A referenced anchor
+cannot be deleted; replace or remove its dependent resources first. Only the
+selected anchor is parsed for a check, keeping runtime memory bounded. Correct
+RTC time remains mandatory for certificate validation.
 
 TLS obtains entropy from the STM32 hardware random-number generator. Its
-dedicated 52 KiB allocator arena resides in CPU-only CCM RAM, preserving
+dedicated 62 KiB allocator arena resides in CPU-only CCM RAM, preserving
 ordinary SRAM for FreeRTOS, lwIP, and Ethernet DMA. The transport layer is
 kept independent of STM32F407 peripherals to simplify future STM32F767 and
 STM32F769 ports.
@@ -193,6 +205,47 @@ returns the fifty newest records through `GET /api/v1/health-check/logs`:
 The monotonically increasing `sequence` remains the reliable ordering key when
 an early record was written before RTC synchronization.
 
+### Outbound result callback
+
+Every failed health check is persisted and then offered to a three-entry,
+non-blocking queue. Successful checks do not trigger a callback. A failed
+check is not queued if its log record cannot be written and verified.
+A dedicated static callback task delivers queued results without delaying the
+health-check loop. When the queue is full, the oldest undelivered result is
+dropped in favor of the newest one. Callback delivery shares the serialized
+TLS allocator with the management server and health checks.
+
+The callback is disabled by default. Its initial target is
+`https://loopback.intraclear.com/`, using trust-anchor ID `0`. Configure the
+correct trust anchor for the target before enabling it. `POST` sends the exact
+values from the persisted failure record plus its text transport stage:
+
+```json
+{"sequence":8285,"timestamp":1790498283,"resource_index":2,"status":"fail","stage":"ok","http_status":503,"elapsed_ms":1260,"detail":1001}
+```
+
+`GET` appends the same eight values as query parameters. `resource_index` is
+the zero-based health-check configuration slot and callback `status` is always
+`fail`. `stage` preserves the log's transport status (`ok`, `dns_error`,
+`connect_error`, `config_error`, `certificate_error`, `handshake_error`,
+`io_error`, or `protocol_error`); for example, an HTTP 503 has stage `ok`
+because its transport completed successfully. The callback reads only the
+bounded HTTP response status line.
+
+Read or partially update its persistent configuration with:
+
+```http
+GET /api/v1/callback/config
+PUT /api/v1/callback/config
+```
+
+Example update body:
+
+```json
+{"enabled":true,"method":"POST","host":"loopback.intraclear.com",
+ "port":443,"path":"/","trust_anchor_id":1}
+```
+
 ## Management API
 
 The device serves a bounded JSON API over TLS 1.3 on TCP port 443. Except for
@@ -255,17 +308,19 @@ development.
 | `DELETE` | `/api/v1/users/{username}` | Administrator bearer | Delete a user and revoke its session. |
 | `PUT` | `/api/v1/tls/certificate` | Administrator bearer | Upload a raw DER server certificate. |
 | `PUT` | `/api/v1/tls/private-key` | Administrator bearer | Upload a raw DER server private key. |
-| `GET` | `/api/v1/trust-anchors` | Any authenticated bearer | List factory and persistent CA trust anchors. |
+| `GET` | `/api/v1/trust-anchors` | Any authenticated bearer | List persistent CA trust anchors. |
 | `POST` | `/api/v1/trust-anchors` | Administrator bearer | Add a raw DER CA certificate to the first free slot. |
 | `PUT` | `/api/v1/trust-anchors/{id}` | Administrator bearer | Replace a persistent CA certificate. |
 | `DELETE` | `/api/v1/trust-anchors/{id}` | Administrator bearer | Delete an unused persistent CA certificate. |
-| `DELETE` | `/api/v1/trust-anchors` | Administrator bearer | Reassign resources to factory ID 0 and clear persistent anchors. |
+| `DELETE` | `/api/v1/trust-anchors` | Administrator bearer | Clear all anchors when none are referenced. |
 | `GET` | `/api/v1/health-check/config` | Any authenticated bearer | Read the period and configured resources. |
 | `PUT` | `/api/v1/health-check/config` | Administrator bearer | Set the period from 60 through 1800 seconds. |
 | `POST` | `/api/v1/health-check/resources` | Administrator bearer | Add a resource; up to three slots are available. |
 | `PUT` | `/api/v1/health-check/resources/{index}` | Administrator bearer | Update a resource; omitted fields retain their values. |
 | `DELETE` | `/api/v1/health-check/resources/{index}` | Administrator bearer | Clear a resource slot; a later resource may reuse its index. |
 | `GET` | `/api/v1/health-check/logs` | Any authenticated bearer | Return the fifty newest completed checks. |
+| `GET` | `/api/v1/callback/config` | Any authenticated bearer | Read outbound callback configuration. |
+| `PUT` | `/api/v1/callback/config` | Administrator bearer | Partially update outbound callback configuration; omitted fields retain their values. |
 | `GET` | `/api/v1/temperature` | Any authenticated bearer | Return the latest DS18B20 readings. |
 | `GET` | `/api/v1/rtc` | Any authenticated bearer | Return UTC time and synchronization state. |
 
@@ -284,7 +339,7 @@ through the health-check log. The response also reports the firmware `version`
 build timestamp):
 
 ```json
-{"status":"ok","version":"0.0.2","build_date":"Aug  3 2026",
+{"status":"ok","version":"0.0.3","build_date":"Sep 26 2026",
 "systems":{"api":true,"network":true,"rtc":true,"flash":true,"temperature":true}}
 ```
 
@@ -292,8 +347,10 @@ build timestamp):
 
 Trust anchors authenticate remote resources checked by the TLS client; they
 are independent of the certificate and private key presented by the management
-API server. Anchor ID `0` is compiled into firmware and cannot be replaced or
-deleted. IDs `1` through `3` are persistent W25Q64 slots.
+API server. IDs `0` through `3` are mutable W25Q64 slots. A fresh store seeds
+ID `0` with SSL.com TLS RSA Root CA 2022 for `pgw.intraclear.com`; the seed is
+ordinary persistent configuration after provisioning, not a protected factory
+anchor.
 
 Convert a root CA certificate from PEM to DER:
 
@@ -325,15 +382,22 @@ or updating a resource:
 ```
 
 Uploads are parsed and checked for the CA basic constraint before an A/B Flash
-update is activated. An anchor referenced by a resource cannot be deleted.
-Replacing an anchor keeps its ID and immediately affects later checks. Deleting
-`/api/v1/trust-anchors` resets every resource to factory ID `0` before clearing
-all persistent anchors, providing a recovery path without removing the
-compiled factory certificate.
+update is activated. An anchor referenced by a health-check resource cannot be
+deleted, regardless of whether that resource is enabled. An anchor selected by
+the callback is also protected while callback delivery is enabled. Replacing
+an anchor keeps its ID and immediately affects later requests. An individual
+anchor or the complete store can be deleted only when these in-use checks pass,
+preventing active configuration from retaining a dangling dependency.
 
 On the first boot after upgrading, version-1 health-check configuration is
 migrated transactionally. Existing resources retain their host, port, path,
-and enabled state and are assigned factory trust-anchor ID `0`.
+and enabled state and are assigned default trust-anchor ID `0`. Version-1
+trust-anchor slots are also migrated transactionally; the new mutable default
+is inserted at ID `0` and the former custom IDs `1` through `3` are preserved.
+On version 1, ID `0` implicitly selected the compiled USERTrust RSA root. After
+the upgrade, ID `0` selects SSL.com TLS RSA Root CA 2022 instead. Consequently,
+an existing non-default resource that relied on a USERTrust/Sectigo chain must
+be assigned a suitable migrated or newly uploaded anchor after the upgrade.
 
 ### Updating the server certificate and key
 
@@ -379,18 +443,32 @@ currently active credential remains in service.
 ### Postman tests
 
 Import
-`test/postman/STM32_F407_Health_Check_API.postman_collection.json`. Set these
-collection variables locally:
+`test/postman/STM32 F407 Health Check API.postman_collection.json`. Set these
+variables in the active Postman environment:
 
 - `baseUrl` — the device URL, updated for its DHCP address if necessary
-- `masterPassword` and `testPassword` — secret test credentials
+- `username` and `password` — the single account used by the collection
+
+The login and refresh scripts store `accessToken` and `refreshToken` in that
+same environment. Switching environments therefore switches the target device,
+account, and session without changing collection data. Configure these optional
+collection variables as needed:
+
 - `certificateDerPath` and `privateKeyDerPath` — generated DER files
 - `trustAnchorDerPath` — a DER-encoded root CA certificate for trust-store tests
+- `healthCheckHost`, `healthCheckPort`, `healthCheckPath`, and
+  `healthCheckEnabled` — the resource exercised by the collection
+- `callbackEnabled`, `callbackMethod`, `callbackHost`, `callbackPort`,
+  `callbackPath`, and `callbackTrustAnchorId` — outbound callback settings
+- `managedUsername`, `managedPassword`, `managedRole`, and `managedEnabled` —
+  the account targeted by user create, update, and delete requests
 
 Trust the management certificate in Postman. The collection tests
-authentication and token rotation, user CRUD, RTC and temperature reads,
-health-check configuration and logs, resource CRUD, trust-anchor lifecycle and
-in-use protection, credential replacement, and token revocation. Scripts
+authentication and token rotation, user listing and CRUD, RTC and temperature
+reads, health-check configuration and logs, resource CRUD, trust-anchor lifecycle and
+in-use protection, callback configuration, credential replacement, and token
+revocation. Administrative requests require an administrator environment;
+read-only requests can use an enabled ordinary-user environment. Scripts
 automatically retain rotated tokens and created resource/anchor indices.
 Depending on the Postman version, raw binary upload files may still need to be
 selected manually.
@@ -414,7 +492,9 @@ initialization so the device remains deselected during startup.
 | Health-check configuration | 2 | A/B transactional snapshot on administrator changes. |
 | TLS server credential | 2 | A/B transactional snapshot on credential changes. |
 | Health-check result log | 2 | Wear-aware append-only ring. |
-| TLS client trust anchors | 4 | Two-sector A/B banks updated on CA changes. |
+| TLS client trust anchors | 6 | Two three-sector A/B banks updated on CA changes. |
+| Factory-reset recovery marker | 1 | Verified before reset-owned sectors are erased. |
+| Callback configuration | 2 | A/B transactional snapshot of callback settings. |
 
 An A/B store writes and verifies a complete snapshot in the inactive sector
 before making it active, protecting infrequently changed data from power loss
@@ -437,10 +517,10 @@ seven seconds and rescans the bus once per minute.
 
 A passive buzzer is driven by hardware PWM on `PA8` (`TIM1_CH1`), exposed at
 `P5.4`, through a 2N2222 transistor. Connect `P5.4 / PA8` to the transistor
-base through a 1–4.7 kOhm
-resistor, connect the emitter to ground, and place the buzzer between its
-supply and the collector. The MCU and buzzer supply must share ground. Add a
-flyback diode only when the sounder is magnetic rather than piezoelectric.
+base through a 1–4.7 kOhm resistor, connect the emitter to ground, and place
+the buzzer between its supply and the collector. The MCU and buzzer supply must
+share ground. Add a flyback diode only when the sounder is magnetic rather than
+piezoelectric.
 
 The service emits one short startup tone to confirm the wiring. Every failed
 resource check schedules three alert tones; successful checks remain silent.
@@ -448,6 +528,36 @@ Hardware PWM generates the tone, while a statically allocated FreeRTOS task
 handles the pattern timing without blocking TLS, networking, sensors, or the
 watchdog. Concurrent requests are coalesced rather than accumulated in an
 unbounded queue.
+
+## Heartbeat LED
+
+The first onboard user LED (`LED1`, `PE13`) indicates that the FreeRTOS
+scheduler is running. The LED is wired open-drain and active-low. A dedicated
+statically allocated service task produces a human-like 1.22-second pattern:
+120 ms on, 100 ms off, 120 ms on, and 880 ms off. The heartbeat is independent
+of Ethernet connectivity and health-check results.
+
+## Factory reset
+
+Hold the onboard `S1` button (`PE10`, active-low) continuously for 10 seconds
+to arm a factory reset. Five warning tones are played, followed by a 10-second
+cancellation window. Release S1 and double-click it within 600 ms to cancel.
+Cancellation is acknowledged with three beeps.
+If the window expires, the device erases management users, health-check
+configuration and history, trust anchors, and uploaded management-server TLS
+credentials, and callback configuration, then reboots.
+
+The compiled `master` administrator and its factory password verifier are not
+stored in NOR Flash and therefore remain available after reset. On reboot, the
+compiled management certificate and key are used, and normal first-provisioning
+logic recreates the `pgw.intraclear.com` resource and its SSL.com trust anchor.
+All additional management users are removed.
+
+Factory reset uses a dedicated NOR recovery-marker sector. The marker is
+written and verified before any persistent store is erased and is cleared only
+after all 17 reset-owned data sectors have been erased and verified. If power
+is lost during the operation, startup completes the erasure before opening or
+reseeding any store.
 
 ## RS485 diagnostic output
 
@@ -466,28 +576,30 @@ interface is transmit-only and intended for development diagnostics.
 ## Memory
 
 The STM32F407VET6 provides 512 KiB internal Flash, 128 KiB ordinary SRAM, and
-64 KiB CPU-only CCM RAM. The current build uses approximately 327 KiB of
-Flash, 113 KiB of ordinary static SRAM, and 62 KiB of CCM RAM. CCM contains
-the Mbed TLS allocation arena; the temporary trust-store transaction snapshot
-remains in ordinary SRAM so certificate validation can use the largest
-practical contiguous TLS arena.
+64 KiB CPU-only CCM RAM. The current build uses approximately 324 KiB of
+Flash, 122 KiB of ordinary static SRAM, and 62 KiB of CCM RAM. CCM contains
+the Mbed TLS allocation arena; the mutable trust-store snapshot remains in
+ordinary SRAM so certificate validation can use the largest practical
+contiguous TLS arena.
 
 The linker exposes `.ccmram` for CPU-only working memory. Ethernet descriptors,
 packet buffers, and every other DMA target must remain in ordinary SRAM.
 
 ## Project structure
 
-- `Core/` — application startup, HAL configuration, and exception handlers
+- `Core/` — application startup, CMSIS platform configuration, and exceptions
 - `Periph/` — board peripheral drivers
 - `Srv/` — FreeRTOS application and network services
 - `FreeRTOS-Kernel/` — imported kernel and Cortex-M4F port
 - `LWIP/App/` — application-level lwIP initialization
 - `LWIP/Target/` — Ethernet MAC and DP83848 adaptation
 - `TLS/` — platform adaptation, trust store, and HTTPS transport
-- `Drivers/` — ST HAL, CMSIS, and PHY vendor sources
+- `Drivers/` — CMSIS device headers and PHY vendor sources
 - `Middlewares/` — imported lwIP and Mbed TLS source distributions
 - `tools/` — credential-generation and conversion utilities
 - `test/postman/` — management API integration collection
+- `test/callback/` — callback target-hardware regression procedure
+- `test/factory_reset/` — destructive factory-reset regression procedure
 
 Vendor source trees remain intact. The Makefile selects only the modules used
 by the firmware.

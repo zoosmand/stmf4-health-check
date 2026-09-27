@@ -23,6 +23,10 @@
 
 #include "main.h"
 
+/**
+  * @brief Create the task that synchronizes and reports the UTC hardware RTC.
+  * @retval (ErrorStatus) SUCCESS when the static task is created.
+  */
 ErrorStatus TimeService_Init(void);
 
 #endif /* TIME_SERVICE_H */

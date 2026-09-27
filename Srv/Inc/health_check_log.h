@@ -52,19 +52,23 @@ typedef struct {
   uint8_t status;
 } HealthCheckLog_EntryTypeDef;
 
-HAL_StatusTypeDef HealthCheckLog_Init(void);
+/** @brief Scan both log sectors and recover the newest append position. */
+Platform_StatusTypeDef HealthCheckLog_Init(void);
 
 /**
   * @brief Append one check result to the persistent ring.
   * @param resourceIndex (uint8_t) Configured resource slot this check ran
   *        against.
   * @param result (const TlsTransport_ResultTypeDef*) Non-null check result.
-  * @retval (HAL_StatusTypeDef) HAL_OK when the record was written and
+  * @param entry (HealthCheckLog_EntryTypeDef*) Non-null output containing the
+  *        exact record written and verified.
+  * @retval (Platform_StatusTypeDef) PLATFORM_STATUS_OK when the record was written and
   *         verified.
   */
-HAL_StatusTypeDef HealthCheckLog_Append(
+Platform_StatusTypeDef HealthCheckLog_Append(
   uint8_t resourceIndex,
-  const TlsTransport_ResultTypeDef* result
+  const TlsTransport_ResultTypeDef* result,
+  HealthCheckLog_EntryTypeDef* entry
 );
 
 /**

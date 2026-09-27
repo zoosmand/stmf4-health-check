@@ -22,6 +22,7 @@
 
 #include "FreeRTOS.h"
 #include "buzzer_service.h"
+#include "callback_service.h"
 #include "health_check_config.h"
 #include "health_check_log.h"
 #include "lwip.h"
@@ -48,9 +49,18 @@ static void healthCheckService_CheckResource(
   uint8_t index,
   const HealthCheckConfig_ResourceTypeDef* resource
 ) {
-  printf(
-    "HTTPS check: https://%s%s\r\n", resource->host, resource->path
-  );
+  if (resource->port == 443U) {
+    printf(
+      "HTTPS check: https://%s%s\r\n", resource->host, resource->path
+    );
+  } else {
+    printf(
+      "HTTPS check: https://%s:%u%s\r\n",
+      resource->host,
+      (unsigned int)resource->port,
+      resource->path
+    );
+  }
   TlsTransport_ResultTypeDef result;
   TlsTransport_Head(
     resource->host,
@@ -85,7 +95,15 @@ static void healthCheckService_CheckResource(
   if ((resourceHealthy == 0U) && (BuzzerService_Alert() != SUCCESS))
     printf("Buzzer alert scheduling failed.\r\n");
 
-  (void)HealthCheckLog_Append(index, &result);
+  HealthCheckLog_EntryTypeDef logEntry;
+  Platform_StatusTypeDef logStatus = HealthCheckLog_Append(
+    index, &result, &logEntry
+  );
+  if (logStatus != PLATFORM_STATUS_OK) {
+    printf("Health check log append failed; callback skipped.\r\n");
+  } else if (resourceHealthy == 0U) {
+    CallbackService_Enqueue(&logEntry);
+  }
 }
 
 static void healthCheckService_Task(void* argument) {

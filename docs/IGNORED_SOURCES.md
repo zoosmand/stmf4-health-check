@@ -7,7 +7,7 @@ local copies of the ignored trees before it can build the firmware.
 
 The ignored paths are:
 
-- `Drivers/` — STM32F4 CMSIS, STM32F4 HAL, and the DP83848 component driver
+- `Drivers/` — STM32F4 CMSIS and the DP83848 component driver
 - `Middlewares/` — lwIP 2.1.2, Mbed TLS, and the nested Mbed TLS Framework
   submodule
 - `FreeRTOS-Kernel/` — FreeRTOS Kernel 11.1.0 with the Cortex-M4F GCC port
@@ -48,7 +48,6 @@ to reduce the build; unlisted files are not compiled.
    ```text
    Drivers/BSP/Components/dp83848/
    Drivers/CMSIS/
-   Drivers/STM32F4xx_HAL_Driver/
    FreeRTOS-Kernel/
    Middlewares/Third_Party/LwIP/
    ```
@@ -60,7 +59,7 @@ to reduce the build; unlisted files are not compiled.
 
    - lwIP 2.1.2
    - FreeRTOS Kernel 11.1.0
-   - the STM32F4 HAL/CMSIS and DP83848 sources compatible with this board
+   - the STM32F4 CMSIS and DP83848 sources compatible with this board
    - the Mbed TLS and Mbed TLS Framework commits recorded by the repository
      submodules
 

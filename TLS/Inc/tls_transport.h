@@ -44,6 +44,31 @@ typedef struct {
 } TlsTransport_ResultTypeDef;
 
 /**
+  * @brief Perform one bounded authenticated HEAD, GET, or POST request.
+  * @param method (const char*) One of "HEAD", "GET", or "POST".
+  * @param host (const char*) DNS name used for connection, SNI, and validation.
+  * @param port (uint16_t) Nonzero TCP destination port.
+  * @param resource (const char*) Request target beginning with '/'.
+  * @param trustAnchorId (uint8_t) Existing persistent CA slot.
+  * @param body (const char*) POST body, or an empty string for HEAD/GET.
+  * @param contentType (const char*) POST media type, otherwise null.
+  * @param result (TlsTransport_ResultTypeDef*) Detailed result output.
+  * @retval (TlsTransport_StatusTypeDef) Final bounded transport stage.
+  * @note Serializes access to the shared Mbed TLS allocator and may block for
+  *       DNS, TCP, TLS, and HTTP timeouts; call only from task context.
+  */
+TlsTransport_StatusTypeDef TlsTransport_Request(
+  const char* method,
+  const char* host,
+  uint16_t port,
+  const char* resource,
+  uint8_t trustAnchorId,
+  const char* body,
+  const char* contentType,
+  TlsTransport_ResultTypeDef* result
+);
+
+/**
   * @brief Perform one authenticated TLS 1.3 HTTP HEAD request.
   * @param host (const char*) DNS hostname used for connection and validation.
   * @param port (uint16_t) TCP destination port.
