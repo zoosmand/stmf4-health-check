@@ -25,7 +25,7 @@ typedef enum {
 
 /**
   * @brief Complete persisted callback destination and delivery policy.
-  * @param enabled (uint8_t) Nonzero when completed checks are delivered.
+  * @param enabled (uint8_t) Nonzero when failed checks are delivered.
   * @param method (uint8_t) CallbackConfig_MethodTypeDef wire method.
   * @param trustAnchorId (uint8_t) Persistent CA slot used for peer validation.
   * @param port (uint16_t) Nonzero TCP destination port.

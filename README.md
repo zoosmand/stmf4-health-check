@@ -207,7 +207,9 @@ an early record was written before RTC synchronization.
 
 ### Outbound result callback
 
-Every completed health check is offered to a three-entry, non-blocking queue.
+Every failed health check is persisted and then offered to a three-entry,
+non-blocking queue. Successful checks do not trigger a callback. A failed
+check is not queued if its log record cannot be written and verified.
 A dedicated static callback task delivers queued results without delaying the
 health-check loop. When the queue is full, the oldest undelivered result is
 dropped in favor of the newest one. Callback delivery shares the serialized
@@ -215,16 +217,20 @@ TLS allocator with the management server and health checks.
 
 The callback is disabled by default. Its initial target is
 `https://loopback.intraclear.com/`, using trust-anchor ID `0`. Configure the
-correct trust anchor for the target before enabling it. `POST` sends exactly
-four JSON keys:
+correct trust anchor for the target before enabling it. `POST` sends the exact
+values from the persisted failure record plus its text transport stage:
 
 ```json
-{"resource":0,"status":"ok","http_status":200,"elapsed_ms":845}
+{"sequence":8285,"timestamp":1790498283,"resource_index":2,"status":"fail","stage":"ok","http_status":503,"elapsed_ms":1260,"detail":1001}
 ```
 
-`GET` appends the same four values as query parameters. `resource` is the
-zero-based health-check configuration slot and `status` is either `ok` or
-`failed`. The callback reads only the bounded HTTP response status line.
+`GET` appends the same eight values as query parameters. `resource_index` is
+the zero-based health-check configuration slot and callback `status` is always
+`fail`. `stage` preserves the log's transport status (`ok`, `dns_error`,
+`connect_error`, `config_error`, `certificate_error`, `handshake_error`,
+`io_error`, or `protocol_error`); for example, an HTTP 503 has stage `ok`
+because its transport completed successfully. The callback reads only the
+bounded HTTP response status line.
 
 Read or partially update its persistent configuration with:
 

@@ -8,10 +8,14 @@ capture endpoint.
 1. Verify that a factory-fresh device reports the default callback target but
    keeps callback delivery disabled.
 2. Configure GET and POST in turn through `PUT /api/v1/callback/config` and
-   confirm that each completed health check produces exactly `resource`,
-   `status`, `http_status`, and `elapsed_ms`.
+   confirm that successful health checks produce no callback. Force a failed
+   check and confirm that it produces exactly `sequence`, `timestamp`,
+   `resource_index`, `status`, `stage`, `http_status`, `elapsed_ms`, and
+   `detail`, with `status` set to `fail`, `stage` matching the log's status,
+   and all numeric values matching the persisted log.
 3. Verify POST uses `application/json` and an exact `Content-Length`; verify GET
-   preserves an existing query string and appends the four parameters with `&`.
+   preserves an existing query string and appends the eight parameters with
+   `&`.
 4. Try invalid methods, ports, trust-anchor IDs, hosts, paths, and oversized
    values. Each must be rejected without changing the last valid snapshot.
 5. Power-cycle during each half of an A/B configuration update and confirm that
@@ -22,6 +26,7 @@ capture endpoint.
    that TLS operations serialize and delivery resumes after the lock is free.
 8. Remove network connectivity and restore it. Confirm bounded timeout behavior
    and that the callback task remains operational for later results.
+   Confirm a failed log write does not produce a callback.
 9. Attempt to delete the callback's active trust anchor. Confirm the API returns
    `409 trust_anchor_in_use` while the callback is enabled.
 10. Perform a factory reset and confirm both callback A/B sectors are erased and

@@ -40,6 +40,7 @@
 
 #include <stddef.h>
 #include <stdio.h>
+#include <string.h>
 
 #define HEALTH_CHECK_LOG_ERASED_SEQUENCE 0xFFFFFFFFUL
 
@@ -167,9 +168,10 @@ Platform_StatusTypeDef HealthCheckLog_Init(void) {
 
 Platform_StatusTypeDef HealthCheckLog_Append(
   uint8_t resourceIndex,
-  const TlsTransport_ResultTypeDef* result
+  const TlsTransport_ResultTypeDef* result,
+  HealthCheckLog_EntryTypeDef* entry
 ) {
-  if (result == NULL)
+  if ((result == NULL) || (entry == NULL))
     return PLATFORM_STATUS_ERROR;
   if (xSemaphoreTake(logMutex, portMAX_DELAY) != pdTRUE)
     return PLATFORM_STATUS_ERROR;
@@ -201,9 +203,16 @@ Platform_StatusTypeDef HealthCheckLog_Append(
   if (status == PLATFORM_STATUS_OK) {
     healthCheckLog_RecordTypeDef verification;
     if ((W25Q64_Read(address, &verification, sizeof(verification)) != PLATFORM_STATUS_OK)
-        || (verification.sequence != record.sequence)
-        || (verification.crc != record.crc)) {
+        || (memcmp(&verification, &record, sizeof(record)) != 0)) {
       status = PLATFORM_STATUS_ERROR;
+    } else {
+      entry->sequence = verification.sequence;
+      entry->timestampUnix = verification.timestampUnix;
+      entry->elapsedMs = verification.elapsedMs;
+      entry->detail = verification.detail;
+      entry->httpStatus = verification.httpStatus;
+      entry->resourceIndex = verification.resourceIndex;
+      entry->status = verification.status;
     }
   }
   if (status != PLATFORM_STATUS_OK)

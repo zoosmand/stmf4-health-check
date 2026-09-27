@@ -4,6 +4,7 @@
 #include "callback_config.h"
 #include "queue.h"
 #include "task.h"
+#include "tls_transport.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -13,12 +14,7 @@
 #define CALLBACK_BODY_SIZE        192U
 #define CALLBACK_RESOURCE_SIZE    256U
 
-typedef struct {
-  uint8_t resource;
-  uint8_t healthy;
-  uint16_t httpStatus;
-  uint32_t elapsedMs;
-} CallbackService_EventTypeDef;
+typedef HealthCheckLog_EntryTypeDef CallbackService_EventTypeDef;
 
 static StaticTask_t callbackTaskControlBlock;
 static StackType_t callbackTaskStack[CALLBACK_TASK_STACK_DEPTH];
@@ -27,6 +23,20 @@ static uint8_t callbackQueueStorage[
   CALLBACK_QUEUE_LENGTH * sizeof(CallbackService_EventTypeDef)
 ];
 static QueueHandle_t callbackQueue;
+
+static const char* callbackService_TransportStatusText(uint8_t status) {
+  switch ((TlsTransport_StatusTypeDef)status) {
+    case TLS_TRANSPORT_OK: return "ok";
+    case TLS_TRANSPORT_DNS_ERROR: return "dns_error";
+    case TLS_TRANSPORT_CONNECT_ERROR: return "connect_error";
+    case TLS_TRANSPORT_CONFIG_ERROR: return "config_error";
+    case TLS_TRANSPORT_CERTIFICATE_ERROR: return "certificate_error";
+    case TLS_TRANSPORT_HANDSHAKE_ERROR: return "handshake_error";
+    case TLS_TRANSPORT_IO_ERROR: return "io_error";
+    case TLS_TRANSPORT_PROTOCOL_ERROR: return "protocol_error";
+    default: return "unknown";
+  }
+}
 
 /**
   * @brief Consume queued check results and deliver enabled callbacks.
@@ -44,7 +54,6 @@ static void callbackService_Task(void* argument) {
     CallbackConfig_Get(&config);
     if (config.enabled == 0U)
       continue;
-    const char* status = event.healthy != 0U ? "ok" : "failed";
     char body[CALLBACK_BODY_SIZE];
     char resource[CALLBACK_RESOURCE_SIZE];
     const char* method;
@@ -53,10 +62,14 @@ static void callbackService_Task(void* argument) {
       method = "POST";
       int length = snprintf(
         body, sizeof(body),
-        "{\"resource\":%u,\"status\":\"%s\",\"http_status\":%u,"
-        "\"elapsed_ms\":%lu}",
-        (unsigned int)event.resource, status,
-        (unsigned int)event.httpStatus, (unsigned long)event.elapsedMs
+        "{\"sequence\":%lu,\"timestamp\":%lu,\"resource_index\":%u,"
+        "\"status\":\"fail\",\"stage\":\"%s\",\"http_status\":%u,"
+        "\"elapsed_ms\":%lu,\"detail\":%ld}",
+        (unsigned long)event.sequence, (unsigned long)event.timestampUnix,
+        (unsigned int)event.resourceIndex,
+        callbackService_TransportStatusText(event.status),
+        (unsigned int)event.httpStatus, (unsigned long)event.elapsedMs,
+        (long)event.detail
       );
       if ((length <= 0) || ((size_t)length >= sizeof(body)))
         continue;
@@ -68,9 +81,13 @@ static void callbackService_Task(void* argument) {
       const char separator = strchr(config.path, '?') == NULL ? '?' : '&';
       int length = snprintf(
         resource, sizeof(resource),
-        "%s%cresource=%u&status=%s&http_status=%u&elapsed_ms=%lu",
-        config.path, separator, (unsigned int)event.resource, status,
-        (unsigned int)event.httpStatus, (unsigned long)event.elapsedMs
+        "%s%csequence=%lu&timestamp=%lu&resource_index=%u&status=fail&stage=%s&"
+        "http_status=%u&elapsed_ms=%lu&detail=%ld",
+        config.path, separator, (unsigned long)event.sequence,
+        (unsigned long)event.timestampUnix, (unsigned int)event.resourceIndex,
+        callbackService_TransportStatusText(event.status),
+        (unsigned int)event.httpStatus, (unsigned long)event.elapsedMs,
+        (long)event.detail
       );
       if ((length <= 0) || ((size_t)length >= sizeof(resource)))
         continue;
@@ -83,7 +100,7 @@ static void callbackService_Task(void* argument) {
     );
     printf(
       "Callback: resource=%u transport=%u http=%u detail=%d\r\n",
-      (unsigned int)event.resource, (unsigned int)callbackResult.status,
+      (unsigned int)event.resourceIndex, (unsigned int)callbackResult.status,
       (unsigned int)callbackResult.httpStatus, callbackResult.detail
     );
   }
@@ -104,19 +121,10 @@ ErrorStatus CallbackService_Init(void) {
   ) != NULL ? SUCCESS : ERROR;
 }
 
-void CallbackService_Enqueue(
-  uint8_t resource,
-  uint8_t healthy,
-  const TlsTransport_ResultTypeDef* result
-) {
-  if ((callbackQueue == NULL) || (result == NULL))
+void CallbackService_Enqueue(const HealthCheckLog_EntryTypeDef* entry) {
+  if ((callbackQueue == NULL) || (entry == NULL))
     return;
-  CallbackService_EventTypeDef event = {
-    .resource = resource,
-    .healthy = healthy,
-    .httpStatus = result->httpStatus,
-    .elapsedMs = result->elapsedMs,
-  };
+  CallbackService_EventTypeDef event = *entry;
   if (xQueueSendToBack(callbackQueue, &event, 0U) != pdTRUE) {
     CallbackService_EventTypeDef discarded;
     (void)xQueueReceive(callbackQueue, &discarded, 0U);

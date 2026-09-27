@@ -95,9 +95,15 @@ static void healthCheckService_CheckResource(
   if ((resourceHealthy == 0U) && (BuzzerService_Alert() != SUCCESS))
     printf("Buzzer alert scheduling failed.\r\n");
 
-  CallbackService_Enqueue(index, resourceHealthy, &result);
-
-  (void)HealthCheckLog_Append(index, &result);
+  HealthCheckLog_EntryTypeDef logEntry;
+  Platform_StatusTypeDef logStatus = HealthCheckLog_Append(
+    index, &result, &logEntry
+  );
+  if (logStatus != PLATFORM_STATUS_OK) {
+    printf("Health check log append failed; callback skipped.\r\n");
+  } else if (resourceHealthy == 0U) {
+    CallbackService_Enqueue(&logEntry);
+  }
 }
 
 static void healthCheckService_Task(void* argument) {
