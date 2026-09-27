@@ -40,6 +40,7 @@
 
 #include <stddef.h>
 #include <stdio.h>
+#include <string.h>
 
 #define HEALTH_CHECK_LOG_ERASED_SEQUENCE 0xFFFFFFFFUL
 
@@ -202,11 +203,7 @@ Platform_StatusTypeDef HealthCheckLog_Append(
   if (status == PLATFORM_STATUS_OK) {
     healthCheckLog_RecordTypeDef verification;
     if ((W25Q64_Read(address, &verification, sizeof(verification)) != PLATFORM_STATUS_OK)
-        || (verification.sequence != record.sequence)
-        || (verification.crc != record.crc)
-        || (verification.crc != healthCheckLog_Crc(
-              &verification, offsetof(healthCheckLog_RecordTypeDef, crc)
-            ))) {
+        || (memcmp(&verification, &record, sizeof(record)) != 0)) {
       status = PLATFORM_STATUS_ERROR;
     } else {
       entry->sequence = verification.sequence;

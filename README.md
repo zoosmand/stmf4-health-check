@@ -218,15 +218,19 @@ TLS allocator with the management server and health checks.
 The callback is disabled by default. Its initial target is
 `https://loopback.intraclear.com/`, using trust-anchor ID `0`. Configure the
 correct trust anchor for the target before enabling it. `POST` sends the exact
-values from the persisted failure record as seven JSON keys:
+values from the persisted failure record plus its text transport stage:
 
 ```json
-{"sequence":8285,"timestamp":1790498283,"resource_index":2,"status":"fail","http_status":200,"elapsed_ms":1260,"detail":1001}
+{"sequence":8285,"timestamp":1790498283,"resource_index":2,"status":"fail","stage":"ok","http_status":503,"elapsed_ms":1260,"detail":1001}
 ```
 
-`GET` appends the same seven values as query parameters. `resource_index` is
+`GET` appends the same eight values as query parameters. `resource_index` is
 the zero-based health-check configuration slot and callback `status` is always
-`fail`. The callback reads only the bounded HTTP response status line.
+`fail`. `stage` preserves the log's transport status (`ok`, `dns_error`,
+`connect_error`, `config_error`, `certificate_error`, `handshake_error`,
+`io_error`, or `protocol_error`); for example, an HTTP 503 has stage `ok`
+because its transport completed successfully. The callback reads only the
+bounded HTTP response status line.
 
 Read or partially update its persistent configuration with:
 

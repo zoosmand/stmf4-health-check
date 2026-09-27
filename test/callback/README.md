@@ -10,10 +10,11 @@ capture endpoint.
 2. Configure GET and POST in turn through `PUT /api/v1/callback/config` and
    confirm that successful health checks produce no callback. Force a failed
    check and confirm that it produces exactly `sequence`, `timestamp`,
-   `resource_index`, `status`, `http_status`, `elapsed_ms`, and `detail`, with
-   `status` set to `fail` and all other values matching the persisted log.
+   `resource_index`, `status`, `stage`, `http_status`, `elapsed_ms`, and
+   `detail`, with `status` set to `fail`, `stage` matching the log's status,
+   and all numeric values matching the persisted log.
 3. Verify POST uses `application/json` and an exact `Content-Length`; verify GET
-   preserves an existing query string and appends the seven parameters with
+   preserves an existing query string and appends the eight parameters with
    `&`.
 4. Try invalid methods, ports, trust-anchor IDs, hosts, paths, and oversized
    values. Each must be rejected without changing the last valid snapshot.
