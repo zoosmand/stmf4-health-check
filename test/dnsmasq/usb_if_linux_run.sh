@@ -6,7 +6,7 @@ readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly IFACE="enx00e04f3a434b"
 readonly NETWORK="10.121.10.0/24"
 readonly ADDRESS="10.121.10.1/24"
-readonly CONFIG_FILE="${SCRIPT_DIR}/usb_if.conf"
+readonly CONFIG_FILE="${SCRIPT_DIR}/usb_if_linux.conf"
 
 if (( EUID != 0 )); then
     printf 'Run this script as root (for example: sudo %q).\n' "$0" >&2
