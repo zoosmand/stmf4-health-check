@@ -16,6 +16,7 @@ Project documentation:
 - [Naming conventions](docs/NAMING_CONVENTIONS.md)
 - [Supplying ignored source trees in forks](docs/IGNORED_SOURCES.md)
 - [Callback hardware regression checks](test/callback/README.md)
+- [Certificate-expiry hardware regression checks](test/certificate_expiry/README.md)
 - [Factory-reset hardware regression checks](test/factory_reset/README.md)
 
 ## Features
@@ -133,6 +134,13 @@ are stored in NOR Flash and may be replaced or deleted. A referenced anchor
 cannot be deleted; replace or remove its dependent resources first. Only the
 selected anchor is parsed for a check, keeping runtime memory bounded. Correct
 RTC time remains mandatory for certificate validation.
+
+After each successful TLS handshake, the service reads the remote leaf
+certificate's expiration time. During its final ten days of validity, each
+resource produces an audible warning at most once per hour: a rising three-note
+melody followed by one, two, or three beeps for resource slots `0`, `1`, or `2`
+respectively. Warning timestamps are kept only in RAM, avoiding periodic NOR
+Flash writes; restarting the device may therefore repeat a warning early.
 
 TLS obtains entropy from the STM32 hardware random-number generator. Its
 dedicated 62 KiB allocator arena resides in CPU-only CCM RAM, preserving
@@ -298,7 +306,7 @@ development.
 
 | Method | Endpoint | Authorization | Purpose |
 |--------|----------|---------------|---------|
-| `GET` `HEAD` | `/health` | None | Report whether the device's essential subsystems are operational. |
+| `GET` `HEAD` | `/health` | None | Report whether the device's essential subsystems are operational; temperature is informational. |
 | `POST` | `/api/v1/auth/token` | None | Exchange a username and password for access and refresh tokens. |
 | `POST` | `/api/v1/auth/refresh` | Refresh token in JSON | Rotate both tokens. |
 | `POST` | `/api/v1/auth/revoke` | Bearer | Revoke the active session. |
@@ -323,16 +331,18 @@ development.
 | `PUT` | `/api/v1/callback/config` | Administrator bearer | Partially update outbound callback configuration; omitted fields retain their values. |
 | `GET` | `/api/v1/temperature` | Any authenticated bearer | Return the latest DS18B20 readings. |
 | `GET` | `/api/v1/rtc` | Any authenticated bearer | Return UTC time and synchronization state. |
+| `POST` | `/api/v1/buzzer/test` | Administrator bearer | Schedule an audible alert or certificate-expiry test pattern. |
 
 Passwords must contain 12 through 128 bytes, usernames may contain at most 24
 bytes, and all requests are deliberately bounded to protect MCU memory.
 
 `GET`/`HEAD /health` is intended for an external availability monitor; `HEAD`
 returns the same status and headers as `GET` without a body. It returns HTTP
-`200` with `status: "ok"` when the API, network, synchronized RTC, NOR Flash,
-and current DS18B20 measurements are operational. It returns HTTP `503` with
-`status: "failed"` when any of those checks fails. The `systems` object in the
-JSON response identifies the failing subsystem. This self-check does not
+`200` with `status: "ok"` when the API, network, synchronized RTC, and NOR
+Flash are operational. It returns HTTP `503` with `status: "failed"` when any
+of those critical checks fails. Temperature status remains available in the
+`systems` object but is informational: a missing or failed DS18B20 does not
+make the device unavailable. This self-check does not
 include the health of configured remote resources; their results are available
 through the health-check log. The response also reports the firmware `version`
 (from the project-owned `.version` file) and `build_date` (the compiler's
@@ -528,6 +538,26 @@ Hardware PWM generates the tone, while a statically allocated FreeRTOS task
 handles the pattern timing without blocking TLS, networking, sensors, or the
 watchdog. Concurrent requests are coalesced rather than accumulated in an
 unbounded queue.
+
+An administrator can test the ordinary three-beep alert or the complete
+certificate-expiry pattern without changing the RTC or contacting a test host:
+
+```http
+POST /api/v1/buzzer/test
+Content-Type: application/json
+
+{"pattern":"alert"}
+```
+
+```http
+POST /api/v1/buzzer/test
+Content-Type: application/json
+
+{"pattern":"certificate_expiry","resource_index":0}
+```
+
+The resource index must be from `0` through `2`. A successful request returns
+HTTP `202` because playback is scheduled asynchronously.
 
 ## Heartbeat LED
 

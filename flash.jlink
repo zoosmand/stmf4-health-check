@@ -1,6 +1,7 @@
+// Copyright (c) 2017-2026 Dmitry Slobodchikov
 r
-loadbin ./build/vsarm_firmware.bin 0x08000000
-verifybin ./build/vsarm_firmware.bin 0x08000000
+loadbin ./build/F407_health_check.bin 0x08000000
+verifybin ./build/F407_health_check.bin 0x08000000
 r
 g
 q

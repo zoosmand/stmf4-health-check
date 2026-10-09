@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2017-2026 Dmitry Slobodchikov
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Convert a PEM certificate/key pair to DER for the management API upload."""
 
 from __future__ import annotations

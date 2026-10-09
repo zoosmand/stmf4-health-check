@@ -1,3 +1,5 @@
+# Copyright (c) 2017-2026 Dmitry Slobodchikov
+
 # Prerequisites
 *.d
 
@@ -89,3 +91,5 @@ Core/.DS_Store
 *.jks
 *.csr
 *.ssh/
+
+usb_if.leases

@@ -19,6 +19,8 @@
 **  Distribution: The file is distributed “as is,” without any warranty
 **                of any kind.
 **
+**  Project modifications Copyright (c) 2017-2026 Dmitry Slobodchikov
+**
 *****************************************************************************
 ** @attention
 **

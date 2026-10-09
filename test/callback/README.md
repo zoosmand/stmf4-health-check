@@ -35,3 +35,7 @@ capture endpoint.
 Monitor `uxTaskGetStackHighWaterMark()` during GET, POST, DNS failure, handshake
 failure, and successful TLS 1.3 delivery before reducing the callback task's
 static stack allocation.
+
+---
+
+&copy; 2017-2026 Askug Ltd., Dmitry Slobodchikov

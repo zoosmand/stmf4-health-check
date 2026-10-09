@@ -12,6 +12,7 @@
  *
  * Copyright (c) 2020-2025 STMicroelectronics.
  * All rights reserved.
+ * Project modifications Copyright (c) 2017-2026 Dmitry Slobodchikov.
  *
  * This software is licensed under terms that can be found in the LICENSE file
  * in the root directory of this software component.
