@@ -33,6 +33,13 @@ ErrorStatus BuzzerService_Init(void);
 ErrorStatus BuzzerService_Alert(void);
 
 /**
+  * @brief Schedule an expiry melody followed by resource identification beeps.
+  * @param resourceIndex (uint8_t) Zero-based resource slot; it is identified
+  *        audibly by resourceIndex + 1 beeps.
+  */
+ErrorStatus BuzzerService_CertificateExpiryWarning(uint8_t resourceIndex);
+
+/**
   * @brief Play the five-beep factory-reset warning and wait for completion.
   * @retval (ErrorStatus) SUCCESS after all five tones have completed.
   */

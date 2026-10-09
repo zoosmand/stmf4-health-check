@@ -26,6 +26,12 @@
 /** @brief Configure PA8 as TIM1 channel 1 PWM, initially silent. */
 Platform_StatusTypeDef Buzzer_Init(void);
 
+/**
+  * @brief Select the passive buzzer PWM frequency.
+  * @param frequencyHz (uint16_t) Audible frequency from 500 through 5000 Hz.
+  */
+Platform_StatusTypeDef Buzzer_SetFrequency(uint16_t frequencyHz);
+
 /** @brief Start the configured audible PWM tone. */
 Platform_StatusTypeDef Buzzer_Start(void);
 

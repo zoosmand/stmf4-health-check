@@ -49,6 +49,47 @@ typedef struct {
 static char tlsTransport_RequestBuffer[TLS_TRANSPORT_REQUEST_SIZE];
 static char tlsTransport_HostHeader[TLS_TRANSPORT_HOST_HEADER_SIZE];
 
+static uint8_t tlsTransport_IsLeapYear(uint32_t year) {
+  return (((year % 4U) == 0U) && (((year % 100U) != 0U)
+      || ((year % 400U) == 0U))) ? 1U : 0U;
+}
+
+static uint8_t tlsTransport_X509TimeToUnix(
+  const mbedtls_x509_time* time,
+  uint32_t* unixTime
+) {
+  static const uint16_t daysBeforeMonth[] = {
+    0U, 31U, 59U, 90U, 120U, 151U,
+    181U, 212U, 243U, 273U, 304U, 334U
+  };
+  if ((time == NULL) || (unixTime == NULL)
+      || (time->year < 1970) || (time->mon < 1) || (time->mon > 12)
+      || (time->day < 1) || (time->day > 31)
+      || (time->hour < 0) || (time->hour > 23)
+      || (time->min < 0) || (time->min > 59)
+      || (time->sec < 0) || (time->sec > 59)) {
+    return 0U;
+  }
+
+  uint32_t year = (uint32_t)time->year;
+  uint32_t previousYear = year - 1U;
+  uint64_t days = (uint64_t)(year - 1970U) * 365U
+    + (previousYear / 4U) - (1969U / 4U)
+    - ((previousYear / 100U) - (1969U / 100U))
+    + ((previousYear / 400U) - (1969U / 400U));
+  days += daysBeforeMonth[(uint32_t)time->mon - 1U];
+  if ((time->mon > 2) && (tlsTransport_IsLeapYear(year) != 0U))
+    ++days;
+  days += (uint32_t)time->day - 1U;
+
+  uint64_t seconds = (((days * 24U) + (uint32_t)time->hour) * 60U
+      + (uint32_t)time->min) * 60U + (uint32_t)time->sec;
+  if (seconds > UINT32_MAX)
+    return 0U;
+  *unixTime = (uint32_t)seconds;
+  return 1U;
+}
+
 static uint8_t tlsTransport_IsTimeoutError(int socketError) {
   return ((socketError == EAGAIN)
       || (socketError == EWOULDBLOCK)
@@ -361,6 +402,12 @@ TlsTransport_StatusTypeDef TlsTransport_Request(
 
   result->tlsVersion = mbedtls_ssl_get_version(&ssl);
   result->cipherSuite = mbedtls_ssl_get_ciphersuite(&ssl);
+  const mbedtls_x509_crt* peerCertificate = mbedtls_ssl_get_peer_cert(&ssl);
+  if (peerCertificate != NULL) {
+    (void)tlsTransport_X509TimeToUnix(
+      &peerCertificate->valid_to, &result->certificateNotAfterUnix
+    );
+  }
 
   char* hostHeader = tlsTransport_HostHeader;
   int hostHeaderLength = (port == 443U)

@@ -22,6 +22,7 @@
 
 #include "FreeRTOS.h"
 #include "buzzer.h"
+#include "health_check_config.h"
 #include "semphr.h"
 #include "task.h"
 
@@ -34,6 +35,10 @@
 #define BUZZER_ALERT_TONE_COUNT         3U
 #define BUZZER_RESET_WARNING_TONE_COUNT 5U
 #define BUZZER_RESET_WARNING_TIMEOUT_MS 5000U
+#define BUZZER_DEFAULT_FREQUENCY_HZ      2500U
+#define BUZZER_MELODY_NOTE_DURATION_MS   120U
+#define BUZZER_MELODY_PAUSE_DURATION_MS  60U
+#define BUZZER_MELODY_TO_COUNT_PAUSE_MS  300U
 
 static StaticTask_t buzzerTaskControlBlock;
 static StackType_t buzzerTaskStack[BUZZER_SERVICE_TASK_STACK_DEPTH];
@@ -42,8 +47,12 @@ static StaticSemaphore_t synchronousCompletionControlBlock;
 static SemaphoreHandle_t synchronousCompletion;
 static uint8_t synchronousRequestActive;
 static uint8_t resetWarningRequested;
+static uint8_t alertRequested;
+static uint8_t certificateWarningMask;
 
-static void buzzerService_Tone(uint32_t durationMs) {
+static void buzzerService_Tone(uint16_t frequencyHz, uint32_t durationMs) {
+  if (Buzzer_SetFrequency(frequencyHz) != PLATFORM_STATUS_OK)
+    Error_Handler();
   if (Buzzer_Start() != PLATFORM_STATUS_OK)
     Error_Handler();
   vTaskDelay(pdMS_TO_TICKS(durationMs));
@@ -51,33 +60,81 @@ static void buzzerService_Tone(uint32_t durationMs) {
     Error_Handler();
 }
 
+static void buzzerService_PlayCount(uint8_t toneCount) {
+  for (uint8_t tone = 0U; tone < toneCount; ++tone) {
+    buzzerService_Tone(
+      BUZZER_DEFAULT_FREQUENCY_HZ, BUZZER_ALERT_TONE_DURATION_MS
+    );
+    if ((tone + 1U) < toneCount)
+      vTaskDelay(pdMS_TO_TICKS(BUZZER_ALERT_PAUSE_DURATION_MS));
+  }
+}
+
+static void buzzerService_PlayCertificateWarning(uint8_t resourceIndex) {
+  static const uint16_t melody[] = { 1600U, 2100U, 2800U };
+  for (uint8_t note = 0U; note < (sizeof(melody) / sizeof(melody[0])); ++note) {
+    buzzerService_Tone(melody[note], BUZZER_MELODY_NOTE_DURATION_MS);
+    if ((note + 1U) < (sizeof(melody) / sizeof(melody[0])))
+      vTaskDelay(pdMS_TO_TICKS(BUZZER_MELODY_PAUSE_DURATION_MS));
+  }
+  vTaskDelay(pdMS_TO_TICKS(BUZZER_MELODY_TO_COUNT_PAUSE_MS));
+  buzzerService_PlayCount(resourceIndex + 1U);
+}
+
 static void buzzerService_Task(void* argument) {
   (void)argument;
 
   printf("Buzzer self-test: started.\r\n");
-  buzzerService_Tone(BUZZER_SELF_TEST_DURATION_MS);
+  buzzerService_Tone(
+    BUZZER_DEFAULT_FREQUENCY_HZ, BUZZER_SELF_TEST_DURATION_MS
+  );
   printf("Buzzer self-test: completed.\r\n");
   for (;;) {
     (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     taskENTER_CRITICAL();
     uint8_t synchronous = synchronousRequestActive;
-    uint8_t toneCount = resetWarningRequested != 0U
-      ? BUZZER_RESET_WARNING_TONE_COUNT
-      : BUZZER_ALERT_TONE_COUNT;
-    if (synchronous != 0U)
+    uint8_t resetWarning = resetWarningRequested;
+    uint8_t resourceIndex = HEALTH_CHECK_CONFIG_MAX_RESOURCES;
+    if (synchronous != 0U) {
       resetWarningRequested = 0U;
-    taskEXIT_CRITICAL();
-    for (uint8_t tone = 0U; tone < toneCount; ++tone) {
-      buzzerService_Tone(BUZZER_ALERT_TONE_DURATION_MS);
-      if ((tone + 1U) < toneCount)
-        vTaskDelay(pdMS_TO_TICKS(BUZZER_ALERT_PAUSE_DURATION_MS));
+    } else if (certificateWarningMask != 0U) {
+      for (resourceIndex = 0U;
+           resourceIndex < HEALTH_CHECK_CONFIG_MAX_RESOURCES;
+           ++resourceIndex) {
+        uint8_t resourceBit = (uint8_t)(1U << resourceIndex);
+        if ((certificateWarningMask & resourceBit) != 0U) {
+          certificateWarningMask &= (uint8_t)~resourceBit;
+          break;
+        }
+      }
+    } else {
+      alertRequested = 0U;
     }
+    taskEXIT_CRITICAL();
+
+    if (synchronous != 0U) {
+      buzzerService_PlayCount(resetWarning != 0U
+        ? BUZZER_RESET_WARNING_TONE_COUNT
+        : BUZZER_ALERT_TONE_COUNT);
+    } else if (resourceIndex < HEALTH_CHECK_CONFIG_MAX_RESOURCES) {
+      buzzerService_PlayCertificateWarning(resourceIndex);
+    } else {
+      buzzerService_PlayCount(BUZZER_ALERT_TONE_COUNT);
+    }
+
     if (synchronous != 0U) {
       taskENTER_CRITICAL();
       synchronousRequestActive = 0U;
       taskEXIT_CRITICAL();
       (void)xSemaphoreGive(synchronousCompletion);
     }
+    taskENTER_CRITICAL();
+    uint8_t morePending = ((synchronousRequestActive != 0U)
+        || (certificateWarningMask != 0U) || (alertRequested != 0U))
+      ? 1U : 0U;
+    taskEXIT_CRITICAL();
+    if (morePending != 0U)
+      xTaskNotifyGive(buzzerTask);
   }
 }
 
@@ -104,6 +161,20 @@ ErrorStatus BuzzerService_Init(void) {
 ErrorStatus BuzzerService_Alert(void) {
   if (buzzerTask == NULL)
     return ERROR;
+  taskENTER_CRITICAL();
+  alertRequested = 1U;
+  taskEXIT_CRITICAL();
+  xTaskNotifyGive(buzzerTask);
+  return SUCCESS;
+}
+
+ErrorStatus BuzzerService_CertificateExpiryWarning(uint8_t resourceIndex) {
+  if ((buzzerTask == NULL)
+      || (resourceIndex >= HEALTH_CHECK_CONFIG_MAX_RESOURCES))
+    return ERROR;
+  taskENTER_CRITICAL();
+  certificateWarningMask |= (uint8_t)(1U << resourceIndex);
+  taskEXIT_CRITICAL();
   xTaskNotifyGive(buzzerTask);
   return SUCCESS;
 }

@@ -16,6 +16,7 @@ Project documentation:
 - [Naming conventions](docs/NAMING_CONVENTIONS.md)
 - [Supplying ignored source trees in forks](docs/IGNORED_SOURCES.md)
 - [Callback hardware regression checks](test/callback/README.md)
+- [Certificate-expiry hardware regression checks](test/certificate_expiry/README.md)
 - [Factory-reset hardware regression checks](test/factory_reset/README.md)
 
 ## Features
@@ -133,6 +134,13 @@ are stored in NOR Flash and may be replaced or deleted. A referenced anchor
 cannot be deleted; replace or remove its dependent resources first. Only the
 selected anchor is parsed for a check, keeping runtime memory bounded. Correct
 RTC time remains mandatory for certificate validation.
+
+After each successful TLS handshake, the service reads the remote leaf
+certificate's expiration time. During its final ten days of validity, each
+resource produces an audible warning at most once per hour: a rising three-note
+melody followed by one, two, or three beeps for resource slots `0`, `1`, or `2`
+respectively. Warning timestamps are kept only in RAM, avoiding periodic NOR
+Flash writes; restarting the device may therefore repeat a warning early.
 
 TLS obtains entropy from the STM32 hardware random-number generator. Its
 dedicated 62 KiB allocator arena resides in CPU-only CCM RAM, preserving

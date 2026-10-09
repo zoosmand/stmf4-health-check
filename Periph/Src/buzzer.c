@@ -20,9 +20,23 @@
 
 #include "buzzer.h"
 
-#define BUZZER_TIMER_PRESCALER 167U
-#define BUZZER_TIMER_PERIOD    399U
-#define BUZZER_TIMER_PULSE     200U
+#define BUZZER_TIMER_PRESCALER       167U
+#define BUZZER_TIMER_COUNTER_HZ      1000000UL
+#define BUZZER_DEFAULT_FREQUENCY_HZ  2500U
+#define BUZZER_MIN_FREQUENCY_HZ      500U
+#define BUZZER_MAX_FREQUENCY_HZ      5000U
+
+Platform_StatusTypeDef Buzzer_SetFrequency(uint16_t frequencyHz) {
+  if ((frequencyHz < BUZZER_MIN_FREQUENCY_HZ)
+      || (frequencyHz > BUZZER_MAX_FREQUENCY_HZ)) {
+    return PLATFORM_STATUS_ERROR;
+  }
+  uint32_t period = (BUZZER_TIMER_COUNTER_HZ / frequencyHz) - 1U;
+  TIM1->ARR = period;
+  TIM1->CCR1 = (period + 1U) / 2U;
+  TIM1->EGR = TIM_EGR_UG;
+  return PLATFORM_STATUS_OK;
+}
 
 Platform_StatusTypeDef Buzzer_Init(void) {
   RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
@@ -33,12 +47,13 @@ Platform_StatusTypeDef Buzzer_Init(void) {
     PLATFORM_GPIO_SPEED_VERY_HIGH, 1U
   );
   TIM1->PSC = BUZZER_TIMER_PRESCALER;
-  TIM1->ARR = BUZZER_TIMER_PERIOD;
-  TIM1->CCR1 = BUZZER_TIMER_PULSE;
+  if (Buzzer_SetFrequency(BUZZER_DEFAULT_FREQUENCY_HZ)
+      != PLATFORM_STATUS_OK) {
+    return PLATFORM_STATUS_ERROR;
+  }
   TIM1->CCMR1 = TIM_CCMR1_OC1M_1 | TIM_CCMR1_OC1M_2;
   TIM1->CCER = TIM_CCER_CC1E;
   TIM1->BDTR = TIM_BDTR_MOE;
-  TIM1->EGR = TIM_EGR_UG;
   return Buzzer_Stop();
 }
 
