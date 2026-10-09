@@ -82,6 +82,11 @@
       "value": ""
     },
     {
+      "key": "buzzerResourceIndex",
+      "value": "0",
+      "description": "Resource slot used by the certificate-expiry buzzer test"
+    },
+    {
       "key": "managedUsername",
       "value": "operator",
       "description": "Account managed by user-administration requests; not used for collection authentication"
@@ -114,7 +119,8 @@
                   "pm.test(\"Device is operational\", () => pm.response.to.have.status(200));",
                   "const body = pm.response.json();",
                   "pm.expect(body.status).to.eql(\"ok\");",
-                  "pm.expect(body.systems).to.include({api: true, network: true, rtc: true, flash: true, temperature: true});"
+                  "pm.expect(body.systems).to.include({api: true, network: true, rtc: true, flash: true});",
+                  "pm.expect(body.systems.temperature).to.be.a(\"boolean\");"
                 ],
                 "type": "text/javascript"
               }
@@ -122,6 +128,38 @@
           ],
           "request": {
             "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Head device health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Device is operational\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"HEAD response has no body\", () => pm.expect(pm.response.text()).to.eql(\"\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "HEAD",
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/health",
@@ -500,6 +538,106 @@
                 "api",
                 "v1",
                 "temperature"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Buzzer",
+      "item": [
+        {
+          "name": "Test alert pattern",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Alert pattern scheduled\", () => pm.response.to.have.status(202));",
+                  "const body = pm.response.json();",
+                  "pm.expect(body).to.include({scheduled: true, pattern: \"alert\"});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"pattern\": \"alert\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/buzzer/test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "buzzer",
+                "test"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Test certificate-expiry pattern",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Certificate-expiry pattern scheduled\", () => pm.response.to.have.status(202));",
+                  "const body = pm.response.json();",
+                  "pm.expect(body).to.include({scheduled: true, pattern: \"certificate_expiry\"});",
+                  "pm.expect(body.resource_index).to.eql(Number(pm.collectionVariables.get(\"buzzerResourceIndex\")));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"pattern\": \"certificate_expiry\",\n    \"resource_index\": {{buzzerResourceIndex}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/buzzer/test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "buzzer",
+                "test"
               ]
             }
           },

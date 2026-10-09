@@ -3,6 +3,10 @@
 Run these checks on target hardware with an NTP-synchronized RTC and HTTPS test
 servers whose leaf certificates have controlled expiration dates.
 
+Before configuring test certificates, call `POST /api/v1/buzzer/test` with
+`{"pattern":"certificate_expiry","resource_index":0}` (then indices `1` and
+`2`) and confirm the three identification patterns sound as expected.
+
 1. Configure resource slots `0`, `1`, and `2` with valid certificates expiring
    more than ten days in the future. Confirm normal checks produce no expiry
    melody.
