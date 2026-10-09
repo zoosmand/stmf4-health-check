@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (c) 2017-2026 Dmitry Slobodchikov
+# SPDX-License-Identifier: GPL-3.0-only
 
 set -Eeuo pipefail
 

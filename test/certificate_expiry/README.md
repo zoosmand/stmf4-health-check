@@ -32,3 +32,7 @@ Before configuring test certificates, call `POST /api/v1/buzzer/test` with
 
 Monitor `uxTaskGetStackHighWaterMark()` for the health-check and buzzer tasks
 during these checks before reducing either static stack allocation.
+
+---
+
+&copy; 2017-2026 Askug Ltd., Dmitry Slobodchikov

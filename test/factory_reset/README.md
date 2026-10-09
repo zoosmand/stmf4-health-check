@@ -45,3 +45,7 @@ health-check configuration and logs, trust anchors, and uploaded TLS server
 credentials are gone, callback delivery is disabled with its compiled default
 target restored, and all other compiled factory defaults are recreated
 normally.
+
+---
+
+&copy; 2017-2026 Askug Ltd., Dmitry Slobodchikov

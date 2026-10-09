@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "e0212015-2469-4c52-9387-9ce8ab8f3a2a",
     "name": "STM32 F407 Health Check API",
-    "description": "Environment-driven requests for the STM32F407 health-check API. Select an environment containing baseUrl, username, and password; authentication scripts maintain accessToken and refreshToken in that environment.",
+    "description": "Environment-driven requests for the STM32F407 health-check API. Select an environment containing baseUrl, username, and password; authentication scripts maintain accessToken and refreshToken in that environment. Copyright (c) 2017-2026 Askug Ltd., Dmitry Slobodchikov.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "13569524"
   },
