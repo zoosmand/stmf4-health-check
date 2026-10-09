@@ -35,9 +35,48 @@
 #define HEALTH_CHECK_TASK_STACK_DEPTH 2048U
 #define HEALTH_CHECK_WAIT_MS          1000U
 #define HEALTH_CHECK_OK_STATUS        200U
+#define CERTIFICATE_WARNING_WINDOW_SECONDS (10UL * 24UL * 60UL * 60UL)
+#define CERTIFICATE_WARNING_PERIOD_SECONDS (60UL * 60UL)
 
 static StaticTask_t healthCheckTaskControlBlock;
 static StackType_t healthCheckTaskStack[HEALTH_CHECK_TASK_STACK_DEPTH];
+static uint32_t certificateWarningExpiry[HEALTH_CHECK_CONFIG_MAX_RESOURCES];
+static uint32_t certificateWarningTime[HEALTH_CHECK_CONFIG_MAX_RESOURCES];
+
+static void healthCheckService_CheckCertificateExpiry(
+  uint8_t resourceIndex,
+  uint32_t certificateExpiry
+) {
+  if (certificateExpiry == 0U)
+    return;
+  uint32_t now;
+  if (Rtc_GetUnixTime(&now) != PLATFORM_STATUS_OK)
+    return;
+
+  if (certificateWarningExpiry[resourceIndex] != certificateExpiry) {
+    certificateWarningExpiry[resourceIndex] = certificateExpiry;
+    certificateWarningTime[resourceIndex] = 0U;
+  }
+  uint8_t warningWindow = ((certificateExpiry <= now)
+      || ((certificateExpiry - now) <= CERTIFICATE_WARNING_WINDOW_SECONDS))
+    ? 1U : 0U;
+  if (warningWindow == 0U)
+    return;
+  uint32_t previousWarning = certificateWarningTime[resourceIndex];
+  if ((previousWarning != 0U)
+      && ((now - previousWarning) < CERTIFICATE_WARNING_PERIOD_SECONDS)) {
+    return;
+  }
+  if (BuzzerService_CertificateExpiryWarning(resourceIndex) == SUCCESS) {
+    certificateWarningTime[resourceIndex] = now;
+    printf(
+      "Certificate expiry warning: resource=%u expires=%lu.\r\n",
+      (unsigned int)resourceIndex, (unsigned long)certificateExpiry
+    );
+  } else {
+    printf("Certificate expiry warning scheduling failed.\r\n");
+  }
+}
 
 /**
   * @brief Run one check against a configured resource and record the result.
@@ -68,6 +107,9 @@ static void healthCheckService_CheckResource(
     resource->path,
     resource->trustAnchorId,
     &result
+  );
+  healthCheckService_CheckCertificateExpiry(
+    index, result.certificateNotAfterUnix
   );
 
   if (result.status == TLS_TRANSPORT_OK) {

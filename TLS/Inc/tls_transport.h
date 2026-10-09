@@ -34,11 +34,13 @@ typedef enum {
   TLS_TRANSPORT_PROTOCOL_ERROR
 } TlsTransport_StatusTypeDef;
 
+/** @brief Detailed result of one bounded authenticated HTTPS request. */
 typedef struct {
   TlsTransport_StatusTypeDef status;
   int detail;
   uint16_t httpStatus;
   uint32_t elapsedMs;
+  uint32_t certificateNotAfterUnix; /**< Verified leaf expiry, or 0 if absent. */
   const char* tlsVersion;
   const char* cipherSuite;
 } TlsTransport_ResultTypeDef;

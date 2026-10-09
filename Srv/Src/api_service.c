@@ -22,6 +22,7 @@
 
 #include "FreeRTOS.h"
 #include "auth_service.h"
+#include "buzzer_service.h"
 #include "callback_config.h"
 #include "ds18b20.h"
 #include "health_check_config.h"
@@ -591,8 +592,7 @@ static int apiService_Dispatch(
 
     uint8_t healthy = (networkHealthy != 0U)
       && (rtcHealthy != 0U)
-      && (flashHealthy != 0U)
-      && (temperatureHealthy != 0U);
+      && (flashHealthy != 0U);
     char json[256];
     (void)snprintf(
       json,
@@ -684,6 +684,58 @@ static int apiService_Dispatch(
       );
     }
     return apiService_Respond(ssl, 200, "OK", "{\"revoked\":true}");
+  }
+
+  if ((strcmp(request->method, "POST") == 0)
+      && (strcmp(request->path, "/api/v1/buzzer/test") == 0)) {
+    if (principal.role != USER_ROLE_ADMINISTRATOR)
+      return apiService_Error(ssl, 403, "Forbidden", "forbidden");
+    char pattern[24];
+    if (apiService_JsonString(
+          request->body, "pattern", pattern, sizeof(pattern)
+        ) == 0U) {
+      return apiService_Error(ssl, 400, "Bad Request", "invalid_pattern");
+    }
+    ErrorStatus status;
+    if (strcmp(pattern, "alert") == 0) {
+      status = BuzzerService_Alert();
+    } else if (strcmp(pattern, "certificate_expiry") == 0) {
+      uint32_t resourceIndex;
+      if ((apiService_JsonNumber(
+            request->body, "resource_index", &resourceIndex
+          ) == 0U)
+          || (resourceIndex >= HEALTH_CHECK_CONFIG_MAX_RESOURCES)) {
+        return apiService_Error(
+          ssl, 400, "Bad Request", "invalid_resource_index"
+        );
+      }
+      status = BuzzerService_CertificateExpiryWarning(
+        (uint8_t)resourceIndex
+      );
+      if (status != SUCCESS)
+        return apiService_Error(
+          ssl, 503, "Service Unavailable", "buzzer_unavailable"
+        );
+      char json[96];
+      (void)snprintf(
+        json,
+        sizeof(json),
+        "{\"scheduled\":true,\"pattern\":\"certificate_expiry\","
+        "\"resource_index\":%u}",
+        (unsigned int)resourceIndex
+      );
+      return apiService_Respond(ssl, 202, "Accepted", json);
+    } else {
+      return apiService_Error(ssl, 400, "Bad Request", "invalid_pattern");
+    }
+    if (status != SUCCESS)
+      return apiService_Error(
+        ssl, 503, "Service Unavailable", "buzzer_unavailable"
+      );
+    return apiService_Respond(
+      ssl, 202, "Accepted",
+      "{\"scheduled\":true,\"pattern\":\"alert\"}"
+    );
   }
 
   if ((strcmp(request->method, "GET") == 0)
