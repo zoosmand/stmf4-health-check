@@ -35,7 +35,6 @@
 #define BUZZER_ALERT_TONE_COUNT         3U
 #define BUZZER_RESET_WARNING_TONE_COUNT 5U
 #define BUZZER_RESET_WARNING_TIMEOUT_MS 5000U
-#define BUZZER_DEFAULT_FREQUENCY_HZ      2500U
 #define BUZZER_MELODY_NOTE_DURATION_MS   120U
 #define BUZZER_MELODY_PAUSE_DURATION_MS  60U
 #define BUZZER_MELODY_TO_COUNT_PAUSE_MS  300U
@@ -95,6 +94,7 @@ static void buzzerService_Task(void* argument) {
     uint8_t synchronous = synchronousRequestActive;
     uint8_t resetWarning = resetWarningRequested;
     uint8_t resourceIndex = HEALTH_CHECK_CONFIG_MAX_RESOURCES;
+    uint8_t playAlert = 0U;
     if (synchronous != 0U) {
       resetWarningRequested = 0U;
     } else if (certificateWarningMask != 0U) {
@@ -107,8 +107,9 @@ static void buzzerService_Task(void* argument) {
           break;
         }
       }
-    } else {
+    } else if (alertRequested != 0U) {
       alertRequested = 0U;
+      playAlert = 1U;
     }
     taskEXIT_CRITICAL();
 
@@ -118,7 +119,7 @@ static void buzzerService_Task(void* argument) {
         : BUZZER_ALERT_TONE_COUNT);
     } else if (resourceIndex < HEALTH_CHECK_CONFIG_MAX_RESOURCES) {
       buzzerService_PlayCertificateWarning(resourceIndex);
-    } else {
+    } else if (playAlert != 0U) {
       buzzerService_PlayCount(BUZZER_ALERT_TONE_COUNT);
     }
 

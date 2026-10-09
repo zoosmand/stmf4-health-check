@@ -23,6 +23,8 @@
 
 #include "main.h"
 
+#define BUZZER_DEFAULT_FREQUENCY_HZ 2500U
+
 /** @brief Configure PA8 as TIM1 channel 1 PWM, initially silent. */
 Platform_StatusTypeDef Buzzer_Init(void);
 
