@@ -133,3 +133,7 @@ git add -f path/to/reviewed/source
 Never force-add an entire ignored directory without reviewing its contents.
 Generated build artifacts, local logs, editor settings, credentials, and
 private keys must remain untracked.
+
+---
+
+&copy; 2017-2026 Askug Ltd., Dmitry Slobodchikov

@@ -118,3 +118,7 @@ symbols retain their required upstream spelling.
 Names tied to a peripheral register, protocol field, certificate property, or
 datasheet formula should remain traceable to the corresponding specification.
 Compatibility-sensitive renames belong in dedicated refactoring changes.
+
+---
+
+&copy; 2017-2026 Askug Ltd., Dmitry Slobodchikov

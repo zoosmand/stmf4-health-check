@@ -59,3 +59,7 @@ curl -sk -X PUT https://<device>/api/v1/health-check/resources/<index> \
 The next scheduled check should complete certificate validation and write its
 result to the health-check log. Restart the board afterward and confirm that
 both the trust anchor and the resource association remain available.
+
+---
+
+&copy; 2017-2026 Askug Ltd., Dmitry Slobodchikov

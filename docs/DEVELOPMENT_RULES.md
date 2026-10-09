@@ -41,7 +41,15 @@ before continuing.
 ## Code and documentation
 
 - Follow [the project naming conventions](NAMING_CONVENTIONS.md).
+- Begin project-owned source and script files with the established copyright
+  and licensing header for their file type. Keep public C headers terminated by
+  a named include-guard footer.
+- End project-owned Markdown files with the established visible copyright
+  footer. Generated project files must receive their ownership notice from the
+  generator so regeneration does not remove it.
 - Keep imported vendor and middleware code in its upstream style.
+- Preserve upstream ownership notices in modified vendor-derived files and add
+  a separate project-modifications notice instead of replacing them.
 - Preserve the established ownership of `Core`, `Periph`, `Srv`, `LWIP`, and
   `TLS`.
 - Document public interfaces, structures, units, blocking behavior, ownership,
@@ -138,4 +146,8 @@ After a successful merge:
 
 Do not close an issue when required work remains. Record deferred work in a new
 issue or explicitly document it as an accepted limitation.
+
+---
+
+&copy; 2017-2026 Askug Ltd., Dmitry Slobodchikov
 
