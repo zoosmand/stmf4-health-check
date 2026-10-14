@@ -6,6 +6,8 @@ servers whose leaf certificates have controlled expiration dates.
 Before configuring test certificates, call `POST /api/v1/buzzer/test` with
 `{"pattern":"certificate_expiry","resource_index":0}` (then indices `1` and
 `2`) and confirm the three identification patterns sound as expected.
+Repeat with `pattern` set to `health_check`; confirm Morse SOS is followed by
+the same one-, two-, or three-beep resource identifier.
 
 1. Configure resource slots `0`, `1`, and `2` with valid certificates expiring
    more than ten days in the future. Confirm normal checks produce no expiry
@@ -17,18 +19,26 @@ Before configuring test certificates, call `POST /api/v1/buzzer/test` with
    no more than once in any hour and warns again on the first check after its
    hourly interval elapses.
 4. Configure a resource that returns a non-200 HTTP status with an otherwise
-   valid, nearly expired certificate. Confirm the expiry melody and the normal
-   failed-health-check alert are both played.
+   valid, nearly expired certificate. Confirm only the failed-health-check SOS
+   is played; failed resources do not receive a separate expiry warning.
 5. Replace a resource's nearly expired certificate with a different nearly
    expired certificate. Confirm the changed expiration time starts a new
    warning interval.
 6. Cause DNS, TCP, and TLS-handshake failures where no verified peer certificate
    is available. Confirm those failures do not produce an expiry melody.
-7. Exercise simultaneous warnings for all three resources and a factory-reset
-   warning/cancellation. Confirm pending requests are serialized and none of
-   the distinct warning patterns is lost.
-8. Power-cycle within an hourly interval. Confirm one early repeat warning is
+7. Fail two or three resources in one check cycle. Confirm one SOS is followed
+   after one second by each affected resource identifier in ascending order,
+   with a one-second separator between identifier groups.
+8. In one cycle, fail at least one resource while a different, healthy resource
+   has an expiring certificate. Confirm both alert signatures begin within
+   three seconds, followed by the failed-resource identifiers and then the
+   certificate-expiry identifiers. Also exercise a factory-reset warning and
+   cancellation; confirm pending alert classes are serialized and not lost.
+9. Power-cycle within an hourly interval. Confirm one early repeat warning is
    acceptable because warning timestamps intentionally are not persisted.
+10. Read `GET /api/v1/health-check/logs`. For verified certificates, confirm the
+   ISO UTC expiry, rounded-up `days_left`, anchor ID, and ten-day `expiring`
+   flag. For pre-handshake failures, confirm both date fields are `null`.
 
 Monitor `uxTaskGetStackHighWaterMark()` for the health-check and buzzer tasks
 during these checks before reducing either static stack allocation.

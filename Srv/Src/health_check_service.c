@@ -43,15 +43,16 @@ static StackType_t healthCheckTaskStack[HEALTH_CHECK_TASK_STACK_DEPTH];
 static uint32_t certificateWarningExpiry[HEALTH_CHECK_CONFIG_MAX_RESOURCES];
 static uint32_t certificateWarningTime[HEALTH_CHECK_CONFIG_MAX_RESOURCES];
 
-static void healthCheckService_CheckCertificateExpiry(
+static uint8_t healthCheckService_CheckCertificateExpiry(
   uint8_t resourceIndex,
-  uint32_t certificateExpiry
+  uint32_t certificateExpiry,
+  uint32_t* warningTime
 ) {
   if (certificateExpiry == 0U)
-    return;
+    return 0U;
   uint32_t now;
   if (Rtc_GetUnixTime(&now) != PLATFORM_STATUS_OK)
-    return;
+    return 0U;
 
   if (certificateWarningExpiry[resourceIndex] != certificateExpiry) {
     certificateWarningExpiry[resourceIndex] = certificateExpiry;
@@ -61,21 +62,14 @@ static void healthCheckService_CheckCertificateExpiry(
       || ((certificateExpiry - now) <= CERTIFICATE_WARNING_WINDOW_SECONDS))
     ? 1U : 0U;
   if (warningWindow == 0U)
-    return;
+    return 0U;
   uint32_t previousWarning = certificateWarningTime[resourceIndex];
   if ((previousWarning != 0U)
       && ((now - previousWarning) < CERTIFICATE_WARNING_PERIOD_SECONDS)) {
-    return;
+    return 0U;
   }
-  if (BuzzerService_CertificateExpiryWarning(resourceIndex) == SUCCESS) {
-    certificateWarningTime[resourceIndex] = now;
-    printf(
-      "Certificate expiry warning: resource=%u expires=%lu.\r\n",
-      (unsigned int)resourceIndex, (unsigned long)certificateExpiry
-    );
-  } else {
-    printf("Certificate expiry warning scheduling failed.\r\n");
-  }
+  *warningTime = now;
+  return 1U;
 }
 
 /**
@@ -86,7 +80,10 @@ static void healthCheckService_CheckCertificateExpiry(
   */
 static void healthCheckService_CheckResource(
   uint8_t index,
-  const HealthCheckConfig_ResourceTypeDef* resource
+  const HealthCheckConfig_ResourceTypeDef* resource,
+  uint8_t* failedResources,
+  uint8_t* expiringCertificates,
+  uint32_t warningTimes[HEALTH_CHECK_CONFIG_MAX_RESOURCES]
 ) {
   if (resource->port == 443U) {
     printf(
@@ -108,10 +105,6 @@ static void healthCheckService_CheckResource(
     resource->trustAnchorId,
     &result
   );
-  healthCheckService_CheckCertificateExpiry(
-    index, result.certificateNotAfterUnix
-  );
-
   if (result.status == TLS_TRANSPORT_OK) {
     printf("TLS: %s, %s, certificate valid\r\n",
       result.tlsVersion,
@@ -134,12 +127,17 @@ static void healthCheckService_CheckResource(
     "Resource health: %s\r\n", resourceHealthy != 0U ? "OK" : "FAILED"
   );
 
-  if ((resourceHealthy == 0U) && (BuzzerService_Alert() != SUCCESS))
-    printf("Buzzer alert scheduling failed.\r\n");
+  uint8_t resourceBit = (uint8_t)(1U << index);
+  if (resourceHealthy == 0U) {
+    *failedResources |= resourceBit;
+  } else if (healthCheckService_CheckCertificateExpiry(
+      index, result.certificateNotAfterUnix, &warningTimes[index]) != 0U) {
+    *expiringCertificates |= resourceBit;
+  }
 
   HealthCheckLog_EntryTypeDef logEntry;
   Platform_StatusTypeDef logStatus = HealthCheckLog_Append(
-    index, &result, &logEntry
+    index, resource->trustAnchorId, &result, &logEntry
   );
   if (logStatus != PLATFORM_STATUS_OK) {
     printf("Health check log append failed; callback skipped.\r\n");
@@ -160,13 +158,45 @@ static void healthCheckService_Task(void* argument) {
     HealthCheckConfig_ResourceTypeDef resources[
       HEALTH_CHECK_CONFIG_MAX_RESOURCES
     ];
+    uint8_t failedResources = 0U;
+    uint8_t expiringCertificates = 0U;
+    uint32_t warningTimes[HEALTH_CHECK_CONFIG_MAX_RESOURCES] = { 0U };
     HealthCheckConfig_GetResources(resources);
     for (uint8_t index = 0U; index < HEALTH_CHECK_CONFIG_MAX_RESOURCES; ++index) {
       if ((resources[index].occupied == 0U)
           || (resources[index].enabled == 0U))
         continue;
-      healthCheckService_CheckResource(index, &resources[index]);
+      healthCheckService_CheckResource(
+        index,
+        &resources[index],
+        &failedResources,
+        &expiringCertificates,
+        warningTimes
+      );
     }
+
+    ErrorStatus alertStatus = ((failedResources | expiringCertificates) != 0U)
+      ? BuzzerService_QueueAlerts(failedResources, expiringCertificates)
+      : SUCCESS;
+    if ((expiringCertificates != 0U) && (alertStatus == SUCCESS)) {
+      for (uint8_t index = 0U;
+           index < HEALTH_CHECK_CONFIG_MAX_RESOURCES;
+           ++index) {
+        if ((expiringCertificates & (uint8_t)(1U << index)) == 0U)
+          continue;
+        certificateWarningTime[index] = warningTimes[index];
+        printf(
+          "Certificate expiry warning: resource=%u expires=%lu.\r\n",
+          (unsigned int)index,
+          (unsigned long)certificateWarningExpiry[index]
+        );
+      }
+    } else if (expiringCertificates != 0U) {
+      printf("Certificate expiry warning scheduling failed.\r\n");
+    }
+
+    if ((failedResources != 0U) && (alertStatus != SUCCESS))
+      printf("Buzzer alert scheduling failed.\r\n");
 
     vTaskDelay(pdMS_TO_TICKS(
       HealthCheckConfig_GetPeriodSeconds() * 1000U

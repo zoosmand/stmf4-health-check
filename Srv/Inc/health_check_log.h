@@ -35,21 +35,25 @@
   *        is more recent.
   * @param timestampUnix (uint32_t) RTC UTC time at the moment of the check.
   * @param elapsedMs (uint32_t) Check duration in milliseconds.
+  * @param certificateNotAfterUnix (uint32_t) Verified peer expiry, or zero.
   * @param detail (int32_t) Layer-specific diagnostic code; see
   *        TlsTransport_ResultTypeDef.detail.
   * @param httpStatus (uint16_t) HTTP status received, or 0 if none.
   * @param resourceIndex (uint8_t) Configured resource slot this check ran
   *        against.
   * @param status (uint8_t) TlsTransport_StatusTypeDef value for this check.
+  * @param trustAnchorId (uint8_t) Anchor selected when the check ran.
   */
 typedef struct {
   uint32_t sequence;
   uint32_t timestampUnix;
   uint32_t elapsedMs;
+  uint32_t certificateNotAfterUnix;
   int32_t detail;
   uint16_t httpStatus;
   uint8_t resourceIndex;
   uint8_t status;
+  uint8_t trustAnchorId;
 } HealthCheckLog_EntryTypeDef;
 
 /** @brief Scan both log sectors and recover the newest append position. */
@@ -59,6 +63,7 @@ Platform_StatusTypeDef HealthCheckLog_Init(void);
   * @brief Append one check result to the persistent ring.
   * @param resourceIndex (uint8_t) Configured resource slot this check ran
   *        against.
+  * @param trustAnchorId (uint8_t) Anchor selected for this check.
   * @param result (const TlsTransport_ResultTypeDef*) Non-null check result.
   * @param entry (HealthCheckLog_EntryTypeDef*) Non-null output containing the
   *        exact record written and verified.
@@ -67,6 +72,7 @@ Platform_StatusTypeDef HealthCheckLog_Init(void);
   */
 Platform_StatusTypeDef HealthCheckLog_Append(
   uint8_t resourceIndex,
+  uint8_t trustAnchorId,
   const TlsTransport_ResultTypeDef* result,
   HealthCheckLog_EntryTypeDef* entry
 );

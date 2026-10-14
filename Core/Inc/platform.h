@@ -50,6 +50,9 @@ void Platform_IncrementTick(void);
 /** @brief Return the wrapping monotonic millisecond counter. */
 uint32_t Platform_GetTick(void);
 
+/** @brief Return whole seconds elapsed since the current boot. */
+uint32_t Platform_GetUptimeSeconds(void);
+
 /** @brief Busy-wait for a duration before the scheduler is required. */
 void Platform_Delay(uint32_t milliseconds);
 

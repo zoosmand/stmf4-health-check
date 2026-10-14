@@ -135,12 +135,14 @@ cannot be deleted; replace or remove its dependent resources first. Only the
 selected anchor is parsed for a check, keeping runtime memory bounded. Correct
 RTC time remains mandatory for certificate validation.
 
-After each successful TLS handshake, the service reads the remote leaf
-certificate's expiration time. During its final ten days of validity, each
-resource produces an audible warning at most once per hour: a rising three-note
-melody followed by one, two, or three beeps for resource slots `0`, `1`, or `2`
-respectively. Warning timestamps are kept only in RAM, avoiding periodic NOR
-Flash writes; restarting the device may therefore repeat a warning early.
+After each successful resource check, the service reads the remote leaf
+certificate's expiration time. Failed resources skip the separate expiry
+evaluation because their SOS already reports the more urgent condition. During
+its final ten days of validity, each healthy resource produces an audible
+warning at most once per hour: a rising three-note melody followed by one, two,
+or three beeps for resource slots `0`, `1`, or `2` respectively. Warning
+timestamps are kept only in RAM, avoiding periodic NOR Flash writes; restarting
+the device may therefore repeat a warning early.
 
 TLS obtains entropy from the STM32 hardware random-number generator. Its
 dedicated 62 KiB allocator arena resides in CPU-only CCM RAM, preserving
@@ -203,15 +205,27 @@ returns the fifty newest records through `GET /api/v1/health-check/logs`:
 
 ```json
 {"logs":[{"sequence":123456,"timestamp":1785500000,"resource_index":0,
-"status":"ok","http_status":200,"elapsed_ms":845,"detail":0}]}
+"status":"ok","http_status":200,"elapsed_ms":845,"detail":0,
+"certificate":{"expiring_date":"2026-08-01T10:06:53Z","days_left":10,
+"anchor_id":1,"expiring":true}}]}
 ```
 
 `resource_index` identifies the configured slot at the time of the check.
 `status` uses the diagnostic stages (`ok`, `dns_error`, `connect_error`,
 `config_error`, `certificate_error`, `handshake_error`, `io_error`, or
 `protocol_error`). `detail` has the same meaning as in the console diagnostic.
+`certificate` records the verified remote leaf expiry and the trust anchor used
+at check time. `days_left` is rounded up to whole days relative to the record's
+timestamp, and `expiring` becomes true during the final ten days or after
+expiry. When no verified peer certificate was available, `expiring_date` and
+`days_left` are `null` and `expiring` is false.
 The monotonically increasing `sequence` remains the reliable ordering key when
 an early record was written before RTC synchronization.
+
+The version-2 log record is 32 bytes and retains 256 records across its two
+4 KiB sectors. Installing this format discards incompatible older log records;
+configuration and credentials are unaffected. The API streams formatted log
+entries so certificate metadata does not require a large response buffer.
 
 ### Outbound result callback
 
@@ -306,7 +320,7 @@ development.
 
 | Method | Endpoint | Authorization | Purpose |
 |--------|----------|---------------|---------|
-| `GET` `HEAD` | `/health` | None | Report whether the device's essential subsystems are operational; temperature is informational. |
+| `GET` `HEAD` | `/health` | None | Report uptime and whether the device's essential subsystems are operational; temperature is informational. |
 | `POST` | `/api/v1/auth/token` | None | Exchange a username and password for access and refresh tokens. |
 | `POST` | `/api/v1/auth/refresh` | Refresh token in JSON | Rotate both tokens. |
 | `POST` | `/api/v1/auth/revoke` | Bearer | Revoke the active session. |
@@ -342,7 +356,8 @@ returns the same status and headers as `GET` without a body. It returns HTTP
 Flash are operational. It returns HTTP `503` with `status: "failed"` when any
 of those critical checks fails. Temperature status remains available in the
 `systems` object but is informational: a missing or failed DS18B20 does not
-make the device unavailable. This self-check does not
+make the device unavailable. `uptime` is the number of whole seconds since the
+current boot. This self-check does not
 include the health of configured remote resources; their results are available
 through the health-check log. The response also reports the firmware `version`
 (from the project-owned `.version` file) and `build_date` (the compiler's
@@ -532,21 +547,26 @@ the buzzer between its supply and the collector. The MCU and buzzer supply must
 share ground. Add a flyback diode only when the sounder is magnetic rather than
 piezoelectric.
 
-The service emits one short startup tone to confirm the wiring. Every failed
-resource check schedules three alert tones; successful checks remain silent.
+The service emits one short startup tone to confirm the wiring. A check cycle
+with failed resources schedules one Morse SOS, a one-second separator, and the
+identification beeps for every failed slot in ascending order. Identification
+groups are separated by one second. Successful checks remain silent unless a
+certificate-expiry warning is due. When failures and expiring certificates are
+detected in the same cycle, both audible signatures start within three seconds;
+the SOS identifiers are played first, followed by the expiry identifiers.
 Hardware PWM generates the tone, while a statically allocated FreeRTOS task
 handles the pattern timing without blocking TLS, networking, sensors, or the
 watchdog. Concurrent requests are coalesced rather than accumulated in an
 unbounded queue.
 
-An administrator can test the ordinary three-beep alert or the complete
+An administrator can test the complete health-check SOS or
 certificate-expiry pattern without changing the RTC or contacting a test host:
 
 ```http
 POST /api/v1/buzzer/test
 Content-Type: application/json
 
-{"pattern":"alert"}
+{"pattern":"health_check","resource_index":0}
 ```
 
 ```http
@@ -556,8 +576,9 @@ Content-Type: application/json
 {"pattern":"certificate_expiry","resource_index":0}
 ```
 
-The resource index must be from `0` through `2`. A successful request returns
-HTTP `202` because playback is scheduled asynchronously.
+Both patterns finish with `resource_index + 1` beeps. The resource index must
+be from `0` through `2`. A successful request returns HTTP `202` because
+playback is scheduled asynchronously.
 
 ## Heartbeat LED
 
@@ -606,8 +627,8 @@ interface is transmit-only and intended for development diagnostics.
 ## Memory
 
 The STM32F407VET6 provides 512 KiB internal Flash, 128 KiB ordinary SRAM, and
-64 KiB CPU-only CCM RAM. The current build uses approximately 324 KiB of
-Flash, 122 KiB of ordinary static SRAM, and 62 KiB of CCM RAM. CCM contains
+64 KiB CPU-only CCM RAM. The current build uses approximately 328 KiB of
+Flash, 125 KiB of ordinary static SRAM, and 62 KiB of CCM RAM. CCM contains
 the Mbed TLS allocation arena; the mutable trust-store snapshot remains in
 ordinary SRAM so certificate validation can use the largest practical
 contiguous TLS arena.

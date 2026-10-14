@@ -43,17 +43,27 @@
 #include <string.h>
 
 #define HEALTH_CHECK_LOG_ERASED_SEQUENCE 0xFFFFFFFFUL
+#define HEALTH_CHECK_LOG_RECORD_VERSION  2U
 
 typedef struct {
   uint32_t sequence;
   uint32_t timestampUnix;
   uint32_t elapsedMs;
   int32_t detail;
+  uint32_t certificateNotAfterUnix;
   uint16_t httpStatus;
   uint8_t resourceIndex;
   uint8_t status;
+  uint8_t trustAnchorId;
+  uint8_t version;
+  uint8_t reserved[2];
   uint32_t crc;
 } healthCheckLog_RecordTypeDef;
+
+_Static_assert(
+  sizeof(healthCheckLog_RecordTypeDef) == 32U,
+  "Health-check log record layout changed"
+);
 
 #define HEALTH_CHECK_LOG_SLOTS_PER_SECTOR \
   (W25Q64_SECTOR_SIZE / sizeof(healthCheckLog_RecordTypeDef))
@@ -109,9 +119,10 @@ static void healthCheckLog_ScanSector(
       next = slot;
       break;
     }
-    if (record.crc != healthCheckLog_Crc(
+    if ((record.version != HEALTH_CHECK_LOG_RECORD_VERSION)
+        || (record.crc != healthCheckLog_Crc(
           &record, offsetof(healthCheckLog_RecordTypeDef, crc)
-        )) {
+        ))) {
       /* A torn NOR write cannot be retried without an erase. Skip its slot
          and continue appending at the following erased location. */
       next = slot + 1U;
@@ -168,6 +179,7 @@ Platform_StatusTypeDef HealthCheckLog_Init(void) {
 
 Platform_StatusTypeDef HealthCheckLog_Append(
   uint8_t resourceIndex,
+  uint8_t trustAnchorId,
   const TlsTransport_ResultTypeDef* result,
   HealthCheckLog_EntryTypeDef* entry
 ) {
@@ -187,9 +199,13 @@ Platform_StatusTypeDef HealthCheckLog_Append(
     .timestampUnix = 0U,
     .elapsedMs = result->elapsedMs,
     .detail = (int32_t)result->detail,
+    .certificateNotAfterUnix = result->certificateNotAfterUnix,
     .httpStatus = result->httpStatus,
     .resourceIndex = resourceIndex,
     .status = (uint8_t)result->status,
+    .trustAnchorId = trustAnchorId,
+    .version = HEALTH_CHECK_LOG_RECORD_VERSION,
+    .reserved = {0U, 0U},
     .crc = 0U,
   };
   (void)Rtc_GetUnixTime(&record.timestampUnix);
@@ -210,9 +226,11 @@ Platform_StatusTypeDef HealthCheckLog_Append(
       entry->timestampUnix = verification.timestampUnix;
       entry->elapsedMs = verification.elapsedMs;
       entry->detail = verification.detail;
+      entry->certificateNotAfterUnix = verification.certificateNotAfterUnix;
       entry->httpStatus = verification.httpStatus;
       entry->resourceIndex = verification.resourceIndex;
       entry->status = verification.status;
+      entry->trustAnchorId = verification.trustAnchorId;
     }
   }
   if (status != PLATFORM_STATUS_OK)
@@ -260,6 +278,7 @@ size_t HealthCheckLog_GetRecent(
       if (W25Q64_Read(address, &record, sizeof(record)) != PLATFORM_STATUS_OK)
         break;
       if ((record.sequence == HEALTH_CHECK_LOG_ERASED_SEQUENCE)
+          || (record.version != HEALTH_CHECK_LOG_RECORD_VERSION)
           || (record.crc != healthCheckLog_Crc(
                 &record, offsetof(healthCheckLog_RecordTypeDef, crc)
               ))) {
@@ -269,9 +288,12 @@ size_t HealthCheckLog_GetRecent(
       entries[written].timestampUnix = record.timestampUnix;
       entries[written].elapsedMs = record.elapsedMs;
       entries[written].detail = record.detail;
+      entries[written].certificateNotAfterUnix =
+        record.certificateNotAfterUnix;
       entries[written].httpStatus = record.httpStatus;
       entries[written].resourceIndex = record.resourceIndex;
       entries[written].status = record.status;
+      entries[written].trustAnchorId = record.trustAnchorId;
       ++written;
     }
   }

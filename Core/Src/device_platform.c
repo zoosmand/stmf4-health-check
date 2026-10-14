@@ -21,6 +21,8 @@
 #include "platform.h"
 
 static volatile uint32_t platformTick;
+static volatile uint32_t platformUptimeSeconds;
+static uint16_t platformUptimeMilliseconds;
 
 void Platform_Init(void) {
   SCB->CPACR |= (3UL << (10U * 2U)) | (3UL << (11U * 2U));
@@ -34,8 +36,15 @@ void Platform_Init(void) {
   NVIC_SetPriority(SysTick_IRQn, (1UL << __NVIC_PRIO_BITS) - 1UL);
 }
 
-void Platform_IncrementTick(void) { ++platformTick; }
+void Platform_IncrementTick(void) {
+  ++platformTick;
+  if (++platformUptimeMilliseconds == 1000U) {
+    platformUptimeMilliseconds = 0U;
+    ++platformUptimeSeconds;
+  }
+}
 uint32_t Platform_GetTick(void) { return platformTick; }
+uint32_t Platform_GetUptimeSeconds(void) { return platformUptimeSeconds; }
 
 void Platform_Delay(uint32_t milliseconds) {
   uint32_t started = Platform_GetTick();

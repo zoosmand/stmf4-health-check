@@ -58,12 +58,8 @@
 #define API_SERVICE_BODY_SIZE         TLS_TRUST_STORE_MAX_DER_SIZE
 #define API_SERVICE_TIMEOUT_MS        10000U
 
-/* Worst-case bytes for one log JSON record (all-digit-maxed fields, longest
-   status text "certificate_error", plus its leading comma separator), and
-   the "{"logs":[" / "]}" wrapper plus terminator. */
-#define API_SERVICE_LOG_ENTRY_JSON_SIZE 164U
-#define API_SERVICE_LOGS_JSON_SIZE \
-  ((HEALTH_CHECK_LOG_MAX_RESULTS * API_SERVICE_LOG_ENTRY_JSON_SIZE) + 16U)
+#define API_SERVICE_LOG_ENTRY_JSON_SIZE 320U
+#define API_SERVICE_CERTIFICATE_WARNING_DAYS 10U
 
 typedef struct {
   int descriptor;
@@ -387,6 +383,119 @@ static const char* apiService_TransportStatusText(
   }
 }
 
+static uint8_t apiService_IsLeapYear(uint16_t year) {
+  return (((year % 4U) == 0U)
+      && (((year % 100U) != 0U) || ((year % 400U) == 0U))) ? 1U : 0U;
+}
+
+static uint8_t apiService_DaysInMonth(uint16_t year, uint8_t month) {
+  static const uint8_t days[] = {
+    31U, 28U, 31U, 30U, 31U, 30U,
+    31U, 31U, 30U, 31U, 30U, 31U
+  };
+  return ((month == 2U) && (apiService_IsLeapYear(year) != 0U))
+    ? 29U : days[month - 1U];
+}
+
+static uint8_t apiService_FormatIsoUtc(
+  uint32_t unixTime,
+  char output[21]
+) {
+  uint32_t days = unixTime / 86400UL;
+  uint32_t seconds = unixTime % 86400UL;
+  uint16_t year = 1970U;
+  while (days >= (apiService_IsLeapYear(year) != 0U ? 366UL : 365UL)) {
+    days -= apiService_IsLeapYear(year) != 0U ? 366UL : 365UL;
+    ++year;
+  }
+  uint8_t month = 1U;
+  while (days >= apiService_DaysInMonth(year, month)) {
+    days -= apiService_DaysInMonth(year, month);
+    ++month;
+  }
+  int length = snprintf(
+    output,
+    21U,
+    "%04u-%02u-%02luT%02lu:%02lu:%02luZ",
+    (unsigned int)year,
+    (unsigned int)month,
+    (unsigned long)(days + 1U),
+    (unsigned long)(seconds / 3600UL),
+    (unsigned long)((seconds % 3600UL) / 60UL),
+    (unsigned long)(seconds % 60UL)
+  );
+  return length == 20 ? 1U : 0U;
+}
+
+static int apiService_FormatLogEntry(
+  const HealthCheckLog_EntryTypeDef* entry,
+  uint8_t prependComma,
+  char* output,
+  size_t capacity
+) {
+  const char* separator = prependComma != 0U ? "," : "";
+  if (entry->certificateNotAfterUnix == 0U) {
+    return snprintf(
+      output,
+      capacity,
+      "%s{\"sequence\":%lu,\"timestamp\":%lu,\"resource_index\":%u,"
+      "\"status\":\"%s\",\"http_status\":%u,\"elapsed_ms\":%lu,"
+      "\"detail\":%ld,\"certificate\":{\"expiring_date\":null,"
+      "\"days_left\":null,\"anchor_id\":%u,\"expiring\":false}}",
+      separator,
+      (unsigned long)entry->sequence,
+      (unsigned long)entry->timestampUnix,
+      (unsigned int)entry->resourceIndex,
+      apiService_TransportStatusText(
+        (TlsTransport_StatusTypeDef)entry->status
+      ),
+      (unsigned int)entry->httpStatus,
+      (unsigned long)entry->elapsedMs,
+      (long)entry->detail,
+      (unsigned int)entry->trustAnchorId
+    );
+  }
+
+  char expiry[21];
+  if (apiService_FormatIsoUtc(
+        entry->certificateNotAfterUnix, expiry
+      ) == 0U) {
+    return -1;
+  }
+  uint32_t daysLeft = 0U;
+  if (entry->certificateNotAfterUnix > entry->timestampUnix) {
+    uint32_t remaining =
+      entry->certificateNotAfterUnix - entry->timestampUnix;
+    daysLeft = (remaining / 86400UL)
+      + ((remaining % 86400UL) != 0U ? 1U : 0U);
+  }
+  uint8_t expiring = (entry->certificateNotAfterUnix <= entry->timestampUnix)
+      || (daysLeft <= API_SERVICE_CERTIFICATE_WARNING_DAYS)
+    ? 1U : 0U;
+  return snprintf(
+    output,
+    capacity,
+    "%s{\"sequence\":%lu,\"timestamp\":%lu,\"resource_index\":%u,"
+    "\"status\":\"%s\",\"http_status\":%u,\"elapsed_ms\":%lu,"
+    "\"detail\":%ld,\"certificate\":{\"expiring_date\":\"%s\","
+    "\"days_left\":%lu,\"anchor_id\":%u,\"expiring\":%s}}",
+    separator,
+    (unsigned long)entry->sequence,
+    (unsigned long)entry->timestampUnix,
+    (unsigned int)entry->resourceIndex,
+    apiService_TransportStatusText(
+      (TlsTransport_StatusTypeDef)entry->status
+    ),
+    (unsigned int)entry->httpStatus,
+    (unsigned long)entry->elapsedMs,
+    (long)entry->detail,
+    expiry,
+    (unsigned long)daysLeft,
+    (unsigned int)entry->trustAnchorId,
+    expiring != 0U ? "true" : "false"
+  );
+}
+
 static const char* apiService_Ds18b20StatusText(DS18B20_StatusTypeDef status) {
   switch (status) {
     case DS18B20_STATUS_OK: return "ok";
@@ -432,18 +541,25 @@ static int apiService_Respond(
   return apiService_RespondEx(ssl, status, reason, json, 0U);
 }
 
-/**
-  * @brief Send status/headers and a large JSON body without copying the
-  *        body into a second combined buffer, for responses too large to
-  *        double-buffer on the task stack (e.g. the logs endpoint).
-  */
-static int apiService_RespondBuffer(
+static int apiService_RespondLogs(
   mbedtls_ssl_context* ssl,
-  int status,
-  const char* reason,
-  const char* json,
-  size_t jsonLength
+  const HealthCheckLog_EntryTypeDef* entries,
+  size_t count
 ) {
+  static const char prefix[] = "{\"logs\":[";
+  static const char suffix[] = "]}";
+  char entryJson[API_SERVICE_LOG_ENTRY_JSON_SIZE];
+  size_t jsonLength = (sizeof(prefix) - 1U) + (sizeof(suffix) - 1U);
+  for (size_t index = 0U; index < count; ++index) {
+    int entryLength = apiService_FormatLogEntry(
+      &entries[index], index != 0U ? 1U : 0U,
+      entryJson, sizeof(entryJson)
+    );
+    if ((entryLength <= 0) || ((size_t)entryLength >= sizeof(entryJson)))
+      return MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL;
+    jsonLength += (size_t)entryLength;
+  }
+
   char header[128];
   int length = snprintf(
     header,
@@ -453,8 +569,8 @@ static int apiService_RespondBuffer(
     "Content-Length: %u\r\n"
     "Connection: close\r\n"
     "Cache-Control: no-store\r\n\r\n",
-    status,
-    reason,
+    200,
+    "OK",
     (unsigned int)jsonLength
   );
   if ((length <= 0) || ((size_t)length >= sizeof(header)))
@@ -462,7 +578,17 @@ static int apiService_RespondBuffer(
   int result = apiService_WriteAll(ssl, header, (size_t)length);
   if (result != 0)
     return result;
-  return apiService_WriteAll(ssl, json, jsonLength);
+  result = apiService_WriteAll(ssl, prefix, sizeof(prefix) - 1U);
+  for (size_t index = 0U; (index < count) && (result == 0); ++index) {
+    int entryLength = apiService_FormatLogEntry(
+      &entries[index], index != 0U ? 1U : 0U,
+      entryJson, sizeof(entryJson)
+    );
+    result = apiService_WriteAll(ssl, entryJson, (size_t)entryLength);
+  }
+  if (result != 0)
+    return result;
+  return apiService_WriteAll(ssl, suffix, sizeof(suffix) - 1U);
 }
 
 static int apiService_Error(
@@ -598,11 +724,13 @@ static int apiService_Dispatch(
       json,
       sizeof(json),
       "{\"status\":\"%s\",\"version\":\"%s\",\"build_date\":\"%s\","
+      "\"uptime\":%lu,"
       "\"systems\":{\"api\":true,"
       "\"network\":%s,\"rtc\":%s,\"flash\":%s,\"temperature\":%s}}",
       healthy != 0U ? "ok" : "failed",
       APP_VERSION,
       __DATE__,
+      (unsigned long)Platform_GetUptimeSeconds(),
       networkHealthy != 0U ? "true" : "false",
       rtcHealthy != 0U ? "true" : "false",
       flashHealthy != 0U ? "true" : "false",
@@ -696,35 +824,22 @@ static int apiService_Dispatch(
         ) == 0U) {
       return apiService_Error(ssl, 400, "Bad Request", "invalid_pattern");
     }
+    uint32_t resourceIndex;
+    if ((apiService_JsonNumber(
+          request->body, "resource_index", &resourceIndex
+        ) == 0U)
+        || (resourceIndex >= HEALTH_CHECK_CONFIG_MAX_RESOURCES)) {
+      return apiService_Error(
+        ssl, 400, "Bad Request", "invalid_resource_index"
+      );
+    }
     ErrorStatus status;
-    if (strcmp(pattern, "alert") == 0) {
-      status = BuzzerService_Alert();
+    if (strcmp(pattern, "health_check") == 0) {
+      status = BuzzerService_Alert((uint8_t)resourceIndex);
     } else if (strcmp(pattern, "certificate_expiry") == 0) {
-      uint32_t resourceIndex;
-      if ((apiService_JsonNumber(
-            request->body, "resource_index", &resourceIndex
-          ) == 0U)
-          || (resourceIndex >= HEALTH_CHECK_CONFIG_MAX_RESOURCES)) {
-        return apiService_Error(
-          ssl, 400, "Bad Request", "invalid_resource_index"
-        );
-      }
       status = BuzzerService_CertificateExpiryWarning(
         (uint8_t)resourceIndex
       );
-      if (status != SUCCESS)
-        return apiService_Error(
-          ssl, 503, "Service Unavailable", "buzzer_unavailable"
-        );
-      char json[96];
-      (void)snprintf(
-        json,
-        sizeof(json),
-        "{\"scheduled\":true,\"pattern\":\"certificate_expiry\","
-        "\"resource_index\":%u}",
-        (unsigned int)resourceIndex
-      );
-      return apiService_Respond(ssl, 202, "Accepted", json);
     } else {
       return apiService_Error(ssl, 400, "Bad Request", "invalid_pattern");
     }
@@ -732,10 +847,15 @@ static int apiService_Dispatch(
       return apiService_Error(
         ssl, 503, "Service Unavailable", "buzzer_unavailable"
       );
-    return apiService_Respond(
-      ssl, 202, "Accepted",
-      "{\"scheduled\":true,\"pattern\":\"alert\"}"
+    char json[96];
+    (void)snprintf(
+      json,
+      sizeof(json),
+      "{\"scheduled\":true,\"pattern\":\"%s\",\"resource_index\":%u}",
+      pattern,
+      (unsigned int)resourceIndex
     );
+    return apiService_Respond(ssl, 202, "Accepted", json);
   }
 
   if ((strcmp(request->method, "GET") == 0)
@@ -1381,34 +1501,7 @@ static int apiService_Dispatch(
     size_t count = HealthCheckLog_GetRecent(
       entries, HEALTH_CHECK_LOG_MAX_RESULTS
     );
-    char json[API_SERVICE_LOGS_JSON_SIZE];
-    size_t used = (size_t)snprintf(json, sizeof(json), "{\"logs\":[");
-    for (size_t index = 0U; index < count; ++index) {
-      int written = snprintf(
-        &json[used],
-        sizeof(json) - used,
-        "%s{\"sequence\":%lu,\"timestamp\":%lu,\"resource_index\":%u,"
-        "\"status\":\"%s\",\"http_status\":%u,\"elapsed_ms\":%lu,"
-        "\"detail\":%ld}",
-        index == 0U ? "" : ",",
-        (unsigned long)entries[index].sequence,
-        (unsigned long)entries[index].timestampUnix,
-        (unsigned int)entries[index].resourceIndex,
-        apiService_TransportStatusText(
-          (TlsTransport_StatusTypeDef)entries[index].status
-        ),
-        (unsigned int)entries[index].httpStatus,
-        (unsigned long)entries[index].elapsedMs,
-        (long)entries[index].detail
-      );
-      if ((written <= 0) || ((size_t)written >= (sizeof(json) - used)))
-        return apiService_Error(
-          ssl, 500, "Internal Server Error", "response_too_large"
-        );
-      used += (size_t)written;
-    }
-    used += (size_t)snprintf(&json[used], sizeof(json) - used, "]}");
-    return apiService_RespondBuffer(ssl, 200, "OK", json, used);
+    return apiService_RespondLogs(ssl, entries, count);
   }
 
   if ((strcmp(request->method, "GET") == 0)

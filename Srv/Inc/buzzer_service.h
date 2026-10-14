@@ -27,10 +27,18 @@
 ErrorStatus BuzzerService_Init(void);
 
 /**
-  * @brief Schedule one failure alert; concurrent requests are safely coalesced.
+  * @brief Schedule SOS followed by resource identification beeps.
+  * @param resourceIndex (uint8_t) Zero-based resource slot; it is identified
+  *        audibly by resourceIndex + 1 beeps.
   * @retval (ErrorStatus) SUCCESS when the service accepted the request.
   */
-ErrorStatus BuzzerService_Alert(void);
+ErrorStatus BuzzerService_Alert(uint8_t resourceIndex);
+
+/**
+  * @brief Schedule one SOS for all resources selected by a bit mask.
+  * @param resourceMask (uint8_t) Bit N selects zero-based resource slot N.
+  */
+ErrorStatus BuzzerService_AlertResources(uint8_t resourceMask);
 
 /**
   * @brief Schedule an expiry melody followed by resource identification beeps.
@@ -38,6 +46,22 @@ ErrorStatus BuzzerService_Alert(void);
   *        audibly by resourceIndex + 1 beeps.
   */
 ErrorStatus BuzzerService_CertificateExpiryWarning(uint8_t resourceIndex);
+
+/**
+  * @brief Schedule one expiry melody for all resources selected by a bit mask.
+  * @param resourceMask (uint8_t) Bit N selects zero-based resource slot N.
+  */
+ErrorStatus BuzzerService_CertificateExpiryWarnings(uint8_t resourceMask);
+
+/**
+  * @brief Atomically schedule the alert classes detected in one check cycle.
+  * @param failedMask (uint8_t) Failed-resource bit mask.
+  * @param certificateMask (uint8_t) Expiring-certificate bit mask.
+  */
+ErrorStatus BuzzerService_QueueAlerts(
+  uint8_t failedMask,
+  uint8_t certificateMask
+);
 
 /**
   * @brief Play the five-beep factory-reset warning and wait for completion.
